@@ -407,7 +407,7 @@ Resources:
     
   VPC2PublicSubnetNaclAssociation1:
     Type: AWS::EC2::SubnetNetworkAclAssociation
-    Properties:
+    Properties: 
       SubnetId: !Ref PublicSubnet2
       NetworkAclId: !Ref VPC2NetworkAcl
   
