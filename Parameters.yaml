@@ -1,0 +1,31 @@
+AWSTemplateFormatVersion: '2010-09-09'
+
+Parameters:
+  YourName:
+    Type: String
+    Description: "Enter you user name"
+  GroupName:
+    Type: String
+    Description: "Enter you group name"
+  Password:
+    Type: String
+    Description: "Enter a strong password for the Admin user. Must be at least 8 characters long,must include at least three of the following mix of character types: uppercase letters (A-Z), lowercase letters (a-z), numbers (0-9), and symbols ! @ # $ % ^ & * ( ) _ + - (hyphen) = [ ] { } | '."
+    NoEcho: true
+
+Resources:
+  CFAdminGroup:
+      Type: AWS::IAM::Group
+      Properties:
+        GroupName: !Ref GroupName
+        ManagedPolicyArns: #ARN == ID
+          - arn:aws:iam::aws:policy/AdministratorAccess
+
+  CFAdmin:
+    Type: "AWS::IAM::User"
+    Properties: 
+      UserName: !Ref YourName
+      Groups: 
+        - !Ref CFAdminGroup # == arn:aws:iam::772886489592:group/CFAdmins
+      LoginProfile:
+        Password: !Ref Password
+        PasswordResetRequired: false

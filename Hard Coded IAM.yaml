@@ -1,0 +1,39 @@
+AWSTemplateFormatVersion: '2010-09-09'
+
+Parameters:
+  AccountId:
+    Type: String
+    Description: "Account ID"
+
+  GroupName:
+    Type: String
+    Description: "Group Name"
+    Default: "Admin"
+
+Resources:
+  CFAdminGroup:
+      Type: AWS::IAM::Group
+      Properties:
+        GroupName: !Ref GroupName
+      Statement:
+        - Effect: Allow
+          Action: 
+            - iam:CreateUser
+          Resource: !Ref ppRole
+            
+  ppRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: ReadOnlyRolepp
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/ReadOnlyAccess
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: ec2.amazonaws.com
+              AWS: !Sub
+                - arn:aws:iam::${AWS::AccountId}:root
+            Action: 
+              - sts:AssumeRole

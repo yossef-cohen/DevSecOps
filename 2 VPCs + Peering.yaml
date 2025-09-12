@@ -1,0 +1,265 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Two VPCs: Simple VPC with Public/Private Subnets and Second VPC with 2 Public & 2 Private Subnets'
+
+Resources:
+  VPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 30.0.0.0/16
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: Simple-VPC
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: Simple-IGW
+
+  InternetGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref VPC
+      InternetGatewayId: !Ref InternetGateway
+
+  PublicSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: us-east-1a
+      CidrBlock: 30.0.1.0/24
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: Simple-PublicSubnet
+
+  PrivateSubnet:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: us-east-1a
+      CidrBlock: 30.0.2.0/24
+      Tags:
+        - Key: Name
+          Value: Simple-PrivateSubnet
+
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: Simple-PublicRT
+
+  PrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: Simple-PrivateRT
+
+  PublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: InternetGatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PublicSubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PublicSubnet
+      RouteTableId: !Ref PublicRouteTable
+
+  PrivateSubnetRouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref PrivateSubnet
+      RouteTableId: !Ref PrivateRouteTable
+
+  ##########################
+  # Second VPC
+  ##########################
+
+  SecondVPC:
+    Type: AWS::EC2::VPC
+    Properties:
+      CidrBlock: 40.0.0.0/16
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: Second-VPC
+
+  SecondInternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Properties:
+      Tags:
+        - Key: Name
+          Value: Second-IGW
+
+  SecondInternetGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Properties:
+      VpcId: !Ref SecondVPC
+      InternetGatewayId: !Ref SecondInternetGateway
+
+  # Public Subnets
+  SecondPublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref SecondVPC
+      AvailabilityZone: us-east-1a
+      CidrBlock: 40.0.1.0/24
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: Second-PublicSubnet-1
+
+  SecondPublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref SecondVPC
+      AvailabilityZone: us-east-1b
+      CidrBlock: 40.0.3.0/24
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: Second-PublicSubnet-2
+
+  # Private Subnets
+  SecondPrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref SecondVPC
+      AvailabilityZone: us-east-1a
+      CidrBlock: 40.0.2.0/24
+      Tags:
+        - Key: Name
+          Value: Second-PrivateSubnet-1
+
+  SecondPrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref SecondVPC
+      AvailabilityZone: us-east-1b
+      CidrBlock: 40.0.4.0/24
+      Tags:
+        - Key: Name
+          Value: Second-PrivateSubnet-2
+
+  # Route Tables
+  SecondPublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref SecondVPC
+      Tags:
+        - Key: Name
+          Value: Second-PublicRT
+
+  SecondPrivateRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref SecondVPC
+      Tags:
+        - Key: Name
+          Value: Second-PrivateRT
+
+  # Public Route to Internet Gateway
+  SecondPublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: SecondInternetGatewayAttachment
+    Properties:
+      RouteTableId: !Ref SecondPublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref SecondInternetGateway
+
+  # Route Table Associations
+  SecondPublicSubnet1Association:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref SecondPublicSubnet1
+      RouteTableId: !Ref SecondPublicRouteTable
+
+  SecondPublicSubnet2Association:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref SecondPublicSubnet2
+      RouteTableId: !Ref SecondPublicRouteTable
+
+  SecondPrivateSubnet1Association:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref SecondPrivateSubnet1
+      RouteTableId: !Ref SecondPrivateRouteTable
+
+  SecondPrivateSubnet2Association:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      SubnetId: !Ref SecondPrivateSubnet2
+      RouteTableId: !Ref SecondPrivateRouteTable
+
+    # VPC Peering Connection between Simple-VPC and Second-VPC
+  VPCPeeringConnection:
+    Type: AWS::EC2::VPCPeeringConnection
+    Properties:
+      VpcId: !Ref VPC
+      PeerVpcId: !Ref SecondVPC
+      Tags:
+        - Key: Name
+          Value: Simple-to-Second-VPC-Peering
+
+  # Route from Simple-VPC to Second-VPC
+  SimpleToSecondRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref PrivateRouteTable
+      DestinationCidrBlock: 40.0.0.0/16
+      VpcPeeringConnectionId: !Ref VPCPeeringConnection
+
+  # Route from Second-VPC to Simple-VPC
+  SecondToSimpleRoute:
+    Type: AWS::EC2::Route
+    Properties:
+      RouteTableId: !Ref SecondPrivateRouteTable
+      DestinationCidrBlock: 30.0.0.0/16
+      VpcPeeringConnectionId: !Ref VPCPeeringConnection
+
+
+Outputs:
+  VPCId:
+    Description: VPC ID
+    Value: !Ref VPC
+
+  PublicSubnetId:
+    Description: Public Subnet ID
+    Value: !Ref PublicSubnet
+
+  PrivateSubnetId:
+    Description: Private Subnet ID
+    Value: !Ref PrivateSubnet
+
+  SecondVPCId:
+    Description: Second VPC ID
+    Value: !Ref SecondVPC
+
+  SecondPublicSubnet1Id:
+    Description: Second VPC Public Subnet 1 ID
+    Value: !Ref SecondPublicSubnet1
+
+  SecondPublicSubnet2Id:
+    Description: Second VPC Public Subnet 2 ID
+    Value: !Ref SecondPublicSubnet2
+
+  SecondPrivateSubnet1Id:
+    Description: Second VPC Private Subnet 1 ID
+    Value: !Ref SecondPrivateSubnet1
+
+  SecondPrivateSubnet2Id:
+    Description: Second VPC Private Subnet 2 ID
+    Value: !Ref SecondPrivateSubnet2
