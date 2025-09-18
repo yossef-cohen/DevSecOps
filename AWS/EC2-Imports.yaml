@@ -1,0 +1,85 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Simple VPC with Public and Private Subnets'
+
+Parameters:
+  AmazonLinux2AMI:
+    Type: "AWS::SSM::Parameter::Value<AWS::EC2::Image::Id>"
+    Default: "/aws/service/ami-amazon-linux-latest/amzn2-ami-hvm-x86_64-gp2"
+  AMIName:
+    Type: String
+    Default: "MyAMI"
+    Description: "The name for the imported AMI"
+  EndpointS3Name:
+    Type: String
+    Default: "S3Endpoint"
+    Description: "The name for the S3 VPC Endpoint"
+    
+Resources:
+  AMIHandler:
+    Type: AWS::EC2::Instance
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Ref AMIName
+      InstanceType: t3.micro
+      ImageId: !Ref AmazonLinux2AMI
+      IamInstanceProfile: EC2-to-S3
+      UserData:
+          Fn::Base64: !Sub |
+            #!/bin/bash
+            yum update -y
+            echo "Hello from EC2" > /tmp/test.txt
+            aws s3 cp /tmp/test.txt s3://${BucketS3}/test.txt
+      NetworkInterfaces:
+        - AssociatePublicIpAddress: false
+          DeviceIndex: 0
+          SubnetId: !ImportValue VPCs-PrivateSubnet2AId
+          GroupSet:
+            - !ImportValue VPCs-SecurityGroup2Id
+
+  BucketS3:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "${AWS::StackName}-bucket-s3"
+      AccessControl: Private
+      VersioningConfiguration:
+        Status: Enabled
+
+  EndpointS3:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      ServiceName: !Sub "com.amazonaws.${AWS::Region}.s3"
+      VpcEndpointType: Gateway
+      VpcId: !ImportValue VPCs-VPC2Id
+      RouteTableIds:
+        - !ImportValue VPCs-PrivateRouteTable2Id
+      Tags:
+        - Key: Name
+          Value: !Ref EndpointS3Name
+  
+  InstanceConnectEndpoint:
+    Type: AWS::EC2::InstanceConnectEndpoint
+    Properties:
+      SubnetId: !ImportValue VPCs-PrivateSubnet2AId
+      SecurityGroupIds:
+        - !ImportValue VPCs-SecurityGroup2Id
+      Tags:
+        - Key: Name
+          Value: "InstanceConnectEndpoint"
+
+Outputs:
+  InstanceId:
+    Description: "The ID of the created EC2 instance"
+    Value: !Ref AMIHandler
+    Export:
+      Name: !Sub "${AWS::StackName}-InstanceId"
+  S3BucketName:
+    Description: "The name of the S3 bucket"
+    Value: !Ref BucketS3
+    Export:
+      Name: !Sub "${AWS::StackName}-S3BucketName"
+  InstanceConnectEndpointIdOutput:
+    Description: "The ID of the Instance Connect Endpoint"
+    Value: !Ref InstanceConnectEndpoint
+    Export:
+      Name: !Sub "${AWS::StackName}-InstanceConnectEndpointId"

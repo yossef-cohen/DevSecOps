@@ -4,12 +4,12 @@ Description: 'Simple VPC with Public and Private Subnets'
 Parameters:
   VPC1CIDR:
     Type: String
-    Default: 30.0.0.0/16
+    Default: 10.0.0.0/16
     Description: "Enter the CIDR block for VPC 1"
 
   VPC2CIDR:
     Type: String
-    Default: 40.0.0.0/16
+    Default: 172.16.0.0/16
     Description: "Enter the CIDR block for VPC 2"
   
   SubnetCount1:
@@ -20,7 +20,9 @@ Parameters:
   SubnetCount2:
     Type: Number
     Default: 4
-    Description: "How many subnets to create"
+    MinValue: 4
+    MaxValue: 4
+    Description: "Number of subnets to create in VPC2 (must be 4)"
 
   SubnetMaskBits:
     Type: Number
@@ -153,7 +155,7 @@ Resources:
     Type: AWS::EC2::Subnet
     Properties:
       VpcId: !Ref VPC2
-      AvailabilityZone: !Select [1, !GetAZs ""]
+      AvailabilityZone: !Select [0, !GetAZs ""]
       CidrBlock: !Select [0, !Cidr [!Ref VPC2CIDR, !Ref SubnetCount2, !Ref SubnetMaskBits ]]
       MapPublicIpOnLaunch: true
       Tags:
@@ -165,7 +167,7 @@ Resources:
     Type: AWS::EC2::Subnet
     Properties:
       VpcId: !Ref VPC2
-      AvailabilityZone: !Select [1, !GetAZs ""]
+      AvailabilityZone: !Select [0, !GetAZs ""]
       CidrBlock: !Select [1, !Cidr [!Ref VPC2CIDR, !Ref SubnetCount2, !Ref SubnetMaskBits ]]
       Tags:
         - Key: Name
@@ -176,7 +178,7 @@ Resources:
     Type: AWS::EC2::Subnet
     Properties:
       VpcId: !Ref VPC2
-      AvailabilityZone: !Select [2, !GetAZs ""]
+      AvailabilityZone: !Select [0, !GetAZs ""]
       CidrBlock: !Select [2, !Cidr [!Ref VPC2CIDR, !Ref SubnetCount2, !Ref SubnetMaskBits ]]
       MapPublicIpOnLaunch: true
       Tags:
@@ -188,7 +190,7 @@ Resources:
     Type: AWS::EC2::Subnet
     Properties:
       VpcId: !Ref VPC2
-      AvailabilityZone: !Select [2, !GetAZs ""]
+      AvailabilityZone: !Select [0, !GetAZs ""]
       CidrBlock: !Select [3, !Cidr [!Ref VPC2CIDR, !Ref SubnetCount2, !Ref SubnetMaskBits ]]
       Tags:
         - Key: Name
