@@ -1,0 +1,667 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Comprehensive daily AWS cleanup Lambda - deletes EC2, EBS, NAT, ALB, RDS, ASG, VPC endpoints, VPC peering, EIPs, ENIs, VPCs, SNS, SQS, IAM, S3, EFS, API Gateway, Step Functions, Lambda functions except those tagged managed_by=cloudformation'
+
+Parameters:
+  ScheduleExpression:
+    Type: String
+    Default: 'cron(0 20 * * ? *)'
+    Description: 'How often to run cleanup - daily at 20:00 UTC (cron expression or rate)'
+
+Resources:
+  # IAM Role for Lambda
+  CleanupLambdaRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: CleanupLambdaRole
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+        - arn:aws:iam::aws:policy/AdministratorAccess
+      Tags:
+        - Key: managed_by
+          Value: cloudformation
+
+  # Lambda Function
+  CleanupLambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: aws-daily-cleanup
+      Runtime: python3.9
+      Handler: index.lambda_handler
+      Role: !GetAtt CleanupLambdaRole.Arn
+      Timeout: 900
+      Description: 'Comprehensive cleanup - EC2, EBS, NAT, ALB, RDS, ASG, VPC endpoints, VPC peering, EIPs, ENIs, VPCs, SNS, SQS, IAM, S3, EFS, API Gateway, Step Functions, Lambda - keeps only resources tagged managed_by=cloudformation'
+      Tags:
+        - Key: managed_by
+          Value: cloudformation
+      Code:
+        ZipFile: |
+          import boto3
+
+          def lambda_handler(event, context):
+              # Configure what to clean up - add/remove services here
+              cleanup_config = {
+                  'ec2_instances': True,
+                  'ebs_volumes': True, 
+                  'nat_gateways': True,
+                  'load_balancers': True,
+                  'rds_instances': True,
+                  'auto_scaling_groups': True,
+                  'vpc_endpoints': True,
+                  'vpc_peering': True,
+                  'elastic_ips': True,
+                  'network_interfaces': True,
+                  'vpcs': True,
+                  'sns_topics': True,
+                  'sqs_queues': True,
+                  'iam_users': False,
+                  'iam_groups': False,
+                  'iam_roles': False,
+                  's3_buckets': True,
+                  'efs_filesystems': True,
+                  'api_gateways': True,
+                  'step_functions': True,
+                  'lambda_functions': True,
+                  'vpc_endpoints': True
+              }
+              
+              # Keep resources tagged managed_by=cloudformation, delete others
+              
+              # Clean EC2 Instances
+              if cleanup_config['ec2_instances']:
+                  ec2 = boto3.client('ec2')
+                  instances = ec2.describe_instances(
+                      Filters=[{'Name': 'instance-state-name', 'Values': ['running', 'stopped']}]
+                  )
+                  
+                  for reservation in instances['Reservations']:
+                      for instance in reservation['Instances']:
+                          if not is_managed_by_cloudformation(instance.get('Tags', [])):
+                              ec2.terminate_instances(InstanceIds=[instance['InstanceId']])
+                              print(f"Deleted EC2: {instance['InstanceId']}")
+              
+              # Clean EBS Volumes
+              if cleanup_config['ebs_volumes']:
+                  volumes = ec2.describe_volumes(Filters=[{'Name': 'status', 'Values': ['available']}])
+                  
+                  for volume in volumes['Volumes']:
+                      if not is_managed_by_cloudformation(volume.get('Tags', [])):
+                          ec2.delete_volume(VolumeId=volume['VolumeId'])
+                          print(f"Deleted EBS: {volume['VolumeId']}")
+              
+              # Clean NAT Gateways
+              if cleanup_config['nat_gateways']:
+                  nat_gateways = ec2.describe_nat_gateways(
+                      Filters=[{'Name': 'state', 'Values': ['available']}]
+                  )
+                  
+                  for nat in nat_gateways['NatGateways']:
+                      if not is_managed_by_cloudformation(nat.get('Tags', [])):
+                          ec2.delete_nat_gateway(NatGatewayId=nat['NatGatewayId'])
+                          print(f"Deleted NAT Gateway: {nat['NatGatewayId']}")
+              
+              # Clean Load Balancers
+              if cleanup_config['load_balancers']:
+                  elb = boto3.client('elbv2')
+                  load_balancers = elb.describe_load_balancers()
+                  
+                  for lb in load_balancers['LoadBalancers']:
+                      tags = elb.describe_tags(ResourceArns=[lb['LoadBalancerArn']])
+                      tag_list = tags['TagDescriptions'][0]['Tags'] if tags['TagDescriptions'] else []
+                      
+                      if not is_managed_by_cloudformation(tag_list):
+                          elb.delete_load_balancer(LoadBalancerArn=lb['LoadBalancerArn'])
+                          print(f"Deleted ALB: {lb['LoadBalancerName']}")
+              
+              # Clean RDS Instances
+              if cleanup_config['rds_instances']:
+                  rds = boto3.client('rds')
+                  db_instances = rds.describe_db_instances()
+                  
+                  for db in db_instances['DBInstances']:
+                      tags = rds.list_tags_for_resource(ResourceName=db['DBInstanceArn'])
+                      
+                      if not is_managed_by_cloudformation(tags['TagList']):
+                          rds.delete_db_instance(
+                              DBInstanceIdentifier=db['DBInstanceIdentifier'],
+                              SkipFinalSnapshot=True
+                          )
+                          print(f"Deleted RDS: {db['DBInstanceIdentifier']}")
+              
+              # Clean Auto Scaling Groups
+              if cleanup_config['auto_scaling_groups']:
+                  autoscaling = boto3.client('autoscaling')
+                  asgs = autoscaling.describe_auto_scaling_groups()
+                  
+                  for asg in asgs['AutoScalingGroups']:
+                      tags = autoscaling.describe_tags(
+                          Filters=[{'Name': 'auto-scaling-group', 'Values': [asg['AutoScalingGroupName']]}]
+                      )
+                      
+                      tag_list = [{'Key': tag['Key'], 'Value': tag['Value']} for tag in tags['Tags']]
+                      
+                      if not is_managed_by_cloudformation(tag_list):
+                          autoscaling.delete_auto_scaling_group(
+                              AutoScalingGroupName=asg['AutoScalingGroupName'],
+                              ForceDelete=True
+                          )
+                          print(f"Deleted ASG: {asg['AutoScalingGroupName']}")
+              
+              # Clean VPC Endpoints - FIXED
+              if cleanup_config['vpc_endpoints']:
+                  ec2 = boto3.client('ec2')  # Ensure we have the client
+                  vpc_endpoints = ec2.describe_vpc_endpoints()
+                  
+                  for endpoint in vpc_endpoints['VpcEndpoints']:
+                      if not is_managed_by_cloudformation(endpoint.get('Tags', [])):
+                          ec2.delete_vpc_endpoints(VpcEndpointIds=[endpoint['VpcEndpointId']])
+                          print(f"Deleted VPC Endpoint: {endpoint['VpcEndpointId']}")
+              
+              # Clean VPC Peering Connections
+              if cleanup_config['vpc_peering']:
+                  peering_connections = ec2.describe_vpc_peering_connections(
+                      Filters=[{'Name': 'status-code', 'Values': ['active', 'pending-acceptance']}]
+                  )
+                  
+                  for peering in peering_connections['VpcPeeringConnections']:
+                      if not is_managed_by_cloudformation(peering.get('Tags', [])):
+                          ec2.delete_vpc_peering_connection(VpcPeeringConnectionId=peering['VpcPeeringConnectionId'])
+                          print(f"Deleted VPC Peering: {peering['VpcPeeringConnectionId']}")
+              
+              # Clean Elastic IPs
+              if cleanup_config['elastic_ips']:
+                  eips = ec2.describe_addresses()
+                  
+                  for eip in eips['Addresses']:
+                      if not is_managed_by_cloudformation(eip.get('Tags', [])):
+                          # Disassociate if associated
+                          if 'AssociationId' in eip:
+                              ec2.disassociate_address(AssociationId=eip['AssociationId'])
+                          
+                          # Release the EIP
+                          if 'AllocationId' in eip:
+                              ec2.release_address(AllocationId=eip['AllocationId'])
+                          else:
+                              ec2.release_address(PublicIp=eip['PublicIp'])
+                          
+                          print(f"Released EIP: {eip.get('PublicIp', eip.get('AllocationId'))}")
+              
+              # Clean Network Interfaces (unattached ones) - Do this early to help with VPC cleanup
+              if cleanup_config['network_interfaces']:
+                  network_interfaces = ec2.describe_network_interfaces(
+                      Filters=[{'Name': 'status', 'Values': ['available']}]
+                  )
+                  
+                  for eni in network_interfaces['NetworkInterfaces']:
+                      if not is_managed_by_cloudformation(eni.get('TagSet', [])):
+                          try:
+                              ec2.delete_network_interface(NetworkInterfaceId=eni['NetworkInterfaceId'])
+                              print(f"Deleted Network Interface: {eni['NetworkInterfaceId']}")
+                          except Exception as e:
+                              print(f"Failed to delete ENI {eni['NetworkInterfaceId']}: {e}")
+                  
+                  # Also clean up network interfaces that might be in other states
+                  try:
+                      all_enis = ec2.describe_network_interfaces()
+                      for eni in all_enis['NetworkInterfaces']:
+                          if eni['Status'] == 'available' and not is_managed_by_cloudformation(eni.get('TagSet', [])):
+                              # Skip if it's attached to an instance we might not want to delete
+                              if 'Attachment' not in eni:
+                                  try:
+                                      ec2.delete_network_interface(NetworkInterfaceId=eni['NetworkInterfaceId'])
+                                      print(f"Deleted available ENI: {eni['NetworkInterfaceId']}")
+                                  except:
+                                      pass
+                  except:
+                      pass
+              
+              # Clean SNS Topics
+              if cleanup_config['sns_topics']:
+                  sns = boto3.client('sns')
+                  topics = sns.list_topics()
+                  
+                  for topic in topics['Topics']:
+                      topic_arn = topic['TopicArn']
+                      tags = sns.list_tags_for_resource(ResourceArn=topic_arn)
+                      tag_list = [{'Key': tag['Key'], 'Value': tag['Value']} for tag in tags['Tags']]
+                      
+                      if not is_managed_by_cloudformation(tag_list):
+                          sns.delete_topic(TopicArn=topic_arn)
+                          print(f"Deleted SNS Topic: {topic_arn}")
+              
+              # Clean SQS Queues
+              if cleanup_config['sqs_queues']:
+                  sqs = boto3.client('sqs')
+                  queues = sqs.list_queues()
+                  
+                  for queue_url in queues.get('QueueUrls', []):
+                      tags = sqs.list_queue_tags(QueueUrl=queue_url)
+                      tag_list = [{'Key': k, 'Value': v} for k, v in tags.get('Tags', {}).items()]
+                      
+                      if not is_managed_by_cloudformation(tag_list):
+                          sqs.delete_queue(QueueUrl=queue_url)
+                          print(f"Deleted SQS Queue: {queue_url}")
+              
+              # Clean IAM Users
+              if cleanup_config['iam_users']:
+                  iam = boto3.client('iam')
+                  users = iam.list_users()
+                  
+                  for user in users['Users']:
+                      user_name = user['UserName']
+                      tags = iam.list_user_tags(UserName=user_name)
+                      
+                      if not is_managed_by_cloudformation(tags['Tags']):
+                          policies = iam.list_attached_user_policies(UserName=user_name)
+                          for policy in policies['AttachedPolicies']:
+                              iam.detach_user_policy(UserName=user_name, PolicyArn=policy['PolicyArn'])
+                          
+                          inline_policies = iam.list_user_policies(UserName=user_name)
+                          for policy_name in inline_policies['PolicyNames']:
+                              iam.delete_user_policy(UserName=user_name, PolicyName=policy_name)
+                          
+                          access_keys = iam.list_access_keys(UserName=user_name)
+                          for key in access_keys['AccessKeyMetadata']:
+                              iam.delete_access_key(UserName=user_name, AccessKeyId=key['AccessKeyId'])
+                          
+                          iam.delete_user(UserName=user_name)
+                          print(f"Deleted IAM User: {user_name}")
+              
+              # Clean IAM Groups  
+              if cleanup_config['iam_groups']:
+                  groups = iam.list_groups()
+                  
+                  for group in groups['Groups']:
+                      group_name = group['GroupName']
+                      tags = iam.list_group_tags(GroupName=group_name)
+                      
+                      if not is_managed_by_cloudformation(tags['Tags']):
+                          # Remove users from group
+                          group_users = iam.get_group(GroupName=group_name)
+                          for user in group_users['Users']:
+                              iam.remove_user_from_group(GroupName=group_name, UserName=user['UserName'])
+                          
+                          # Detach policies
+                          policies = iam.list_attached_group_policies(GroupName=group_name)
+                          for policy in policies['AttachedPolicies']:
+                              iam.detach_group_policy(GroupName=group_name, PolicyArn=policy['PolicyArn'])
+                          
+                          inline_policies = iam.list_group_policies(GroupName=group_name)
+                          for policy_name in inline_policies['PolicyNames']:
+                              iam.delete_group_policy(GroupName=group_name, PolicyName=policy_name)
+                          
+                          iam.delete_group(GroupName=group_name)
+                          print(f"Deleted IAM Group: {group_name}")
+              
+              # Clean IAM Roles (be careful not to delete Lambda's own role!)
+              if cleanup_config['iam_roles']:
+                  roles = iam.list_roles()
+                  
+                  for role in roles['Roles']:
+                      role_name = role['RoleName']
+                      # Skip AWS service roles and Lambda execution roles
+                      if not role_name.startswith('AWS') and 'Lambda' not in role_name:
+                          tags = iam.list_role_tags(RoleName=role_name)
+                          
+                          if not is_managed_by_cloudformation(tags['Tags']):
+                              # Detach policies
+                              policies = iam.list_attached_role_policies(RoleName=role_name)
+                              for policy in policies['AttachedPolicies']:
+                                  iam.detach_role_policy(RoleName=role_name, PolicyArn=policy['PolicyArn'])
+                              
+                              inline_policies = iam.list_role_policies(RoleName=role_name)
+                              for policy_name in inline_policies['PolicyNames']:
+                                  iam.delete_role_policy(RoleName=role_name, PolicyName=policy_name)
+                              
+                              iam.delete_role(RoleName=role_name)
+                              print(f"Deleted IAM Role: {role_name}")
+              
+              # Clean S3 Buckets
+              if cleanup_config['s3_buckets']:
+                  s3 = boto3.client('s3')
+                  s3_resource = boto3.resource('s3')
+                  
+                  try:
+                      buckets = s3.list_buckets()
+                      for bucket in buckets['Buckets']:
+                          bucket_name = bucket['Name']
+                          
+                          try:
+                              # Get bucket tags
+                              bucket_tags = []
+                              try:
+                                  tag_response = s3.get_bucket_tagging(Bucket=bucket_name)
+                                  bucket_tags = tag_response['TagSet']
+                              except:
+                                  pass  # No tags
+                              
+                              if not is_managed_by_cloudformation(bucket_tags):
+                                  # Delete all objects and versions
+                                  bucket_resource = s3_resource.Bucket(bucket_name)
+                                  
+                                  # Delete all object versions and delete markers
+                                  bucket_resource.object_versions.delete()
+                                  
+                                  # Delete all objects
+                                  bucket_resource.objects.all().delete()
+                                  
+                                  # Delete the bucket
+                                  s3.delete_bucket(Bucket=bucket_name)
+                                  print(f"Deleted S3 Bucket: {bucket_name}")
+                                  
+                          except Exception as e:
+                              print(f"Error deleting S3 bucket {bucket_name}: {e}")
+                              
+                  except Exception as e:
+                      print(f"Error listing S3 buckets: {e}")
+              
+              # Clean EFS File Systems
+              if cleanup_config['efs_filesystems']:
+                  efs = boto3.client('efs')
+                  
+                  try:
+                      filesystems = efs.describe_file_systems()
+                      for fs in filesystems['FileSystems']:
+                          fs_id = fs['FileSystemId']
+                          
+                          # Get EFS tags
+                          fs_tags = efs.describe_tags(FileSystemId=fs_id)['Tags']
+                          
+                          if not is_managed_by_cloudformation(fs_tags):
+                              try:
+                                  # Delete all mount targets first
+                                  mount_targets = efs.describe_mount_targets(FileSystemId=fs_id)
+                                  for mt in mount_targets['MountTargets']:
+                                      try:
+                                          efs.delete_mount_target(MountTargetId=mt['MountTargetId'])
+                                          print(f"Deleted EFS Mount Target: {mt['MountTargetId']}")
+                                      except Exception as e:
+                                          print(f"Error deleting mount target {mt['MountTargetId']}: {e}")
+                                  
+                                  # Wait for mount targets to be deleted (up to 60 seconds)
+                                  if mount_targets['MountTargets']:
+                                      import time
+                                      for i in range(12):  # 12 * 5 = 60 seconds max
+                                          time.sleep(5)
+                                          remaining_mts = efs.describe_mount_targets(FileSystemId=fs_id)
+                                          if not remaining_mts['MountTargets']:
+                                              break
+                                  
+                                  # Delete the file system
+                                  efs.delete_file_system(FileSystemId=fs_id)
+                                  print(f"Deleted EFS: {fs_id}")
+                                  
+                              except Exception as e:
+                                  print(f"Error deleting EFS {fs_id}: {e}")
+                                  
+                  except Exception as e:
+                      print(f"Error listing EFS: {e}")
+              
+              # Clean API Gateways
+              if cleanup_config['api_gateways']:
+                  # REST API Gateway
+                  apigateway = boto3.client('apigateway')
+                  try:
+                      # Get current region
+                      session = boto3.Session()
+                      region = session.region_name or 'us-east-1'
+                      
+                      rest_apis = apigateway.get_rest_apis()
+                      for api in rest_apis['items']:
+                          api_id = api['id']
+                          
+                          try:
+                              # Get API tags - use correct ARN format with region
+                              api_tags = apigateway.get_tags(resourceArn=f"arn:aws:apigateway:{region}::/restapis/{api_id}")
+                              tag_list = [{'Key': k, 'Value': v} for k, v in api_tags.get('tags', {}).items()]
+                              
+                              if not is_managed_by_cloudformation(tag_list):
+                                  apigateway.delete_rest_api(restApiId=api_id)
+                                  print(f"Deleted REST API: {api_id}")
+                          except Exception as e:
+                              print(f"Error deleting REST API {api_id}: {e}")
+                  except Exception as e:
+                      print(f"Error listing REST APIs: {e}")
+                  
+                  # HTTP API Gateway (API Gateway v2)
+                  apigatewayv2 = boto3.client('apigatewayv2')
+                  try:
+                      http_apis = apigatewayv2.get_apis()
+                      for api in http_apis['Items']:
+                          api_id = api['ApiId']
+                          
+                          # Get API tags
+                          tag_list = [{'Key': k, 'Value': v} for k, v in api.get('Tags', {}).items()]
+                          
+                          if not is_managed_by_cloudformation(tag_list):
+                              try:
+                                  apigatewayv2.delete_api(ApiId=api_id)
+                                  print(f"Deleted HTTP API: {api_id}")
+                              except Exception as e:
+                                  print(f"Error deleting HTTP API {api_id}: {e}")
+                  except Exception as e:
+                      print(f"Error listing HTTP APIs: {e}")
+              
+              # Clean Step Functions
+              if cleanup_config['step_functions']:
+                  stepfunctions = boto3.client('stepfunctions')
+                  
+                  try:
+                      state_machines = stepfunctions.list_state_machines()
+                      for sm in state_machines['stateMachines']:
+                          sm_arn = sm['stateMachineArn']
+                          
+                          try:
+                              # Get Step Function tags
+                              sm_tags_response = stepfunctions.list_tags_for_resource(resourceArn=sm_arn)
+                              
+                              # Step Functions uses lowercase 'key'/'value' format, convert to standard format
+                              tag_list = []
+                              for tag in sm_tags_response.get('tags', []):
+                                  # Handle Step Functions' lowercase format
+                                  key = tag.get('key', '')
+                                  value = tag.get('value', '')
+                                  tag_list.append({'Key': key, 'Value': value})
+                              
+                              if not is_managed_by_cloudformation(tag_list):
+                                  # Stop all running executions first
+                                  executions = stepfunctions.list_executions(
+                                      stateMachineArn=sm_arn,
+                                      statusFilter='RUNNING'
+                                  )
+                                  
+                                  for execution in executions['executions']:
+                                      try:
+                                          stepfunctions.stop_execution(executionArn=execution['executionArn'])
+                                          print(f"Stopped execution: {execution['executionArn']}")
+                                      except Exception as e:
+                                          print(f"Error stopping execution: {e}")
+                                  
+                                  # Delete the state machine
+                                  stepfunctions.delete_state_machine(stateMachineArn=sm_arn)
+                                  print(f"Deleted Step Function: {sm_arn}")
+                                  
+                          except Exception as e:
+                              print(f"Error deleting Step Function {sm_arn}: {e}")
+                              
+                  except Exception as e:
+                      print(f"Error listing Step Functions: {e}")
+              
+              # Clean Lambda Functions
+              if cleanup_config['lambda_functions']:
+                  lambda_client = boto3.client('lambda')
+                  
+                  try:
+                      functions = lambda_client.list_functions()
+                      for function in functions['Functions']:
+                          function_name = function['FunctionName']
+                          function_arn = function['FunctionArn']
+                          
+                          # Skip the cleanup Lambda itself to avoid self-deletion
+                          if 'cleanup' in function_name.lower() or 'aws-daily-cleanup' in function_name.lower():
+                              continue
+                          
+                          try:
+                              # Get Lambda function tags
+                              tags_response = lambda_client.list_tags(Resource=function_arn)
+                              tag_list = [{'Key': k, 'Value': v} for k, v in tags_response.get('Tags', {}).items()]
+                              
+                              if not is_managed_by_cloudformation(tag_list):
+                                  lambda_client.delete_function(FunctionName=function_name)
+                                  print(f"Deleted Lambda Function: {function_name}")
+                                  
+                          except Exception as e:
+                              print(f"Error deleting Lambda function {function_name}: {e}")
+                              
+                  except Exception as e:
+                      print(f"Error listing Lambda functions: {e}")
+              
+              # Clean VPCs (delete non-default VPCs) - MOVED TO NEAR THE END
+              if cleanup_config['vpcs']:
+                  vpcs = ec2.describe_vpcs()
+                  
+                  for vpc in vpcs['Vpcs']:
+                      if not vpc['IsDefault'] and not is_managed_by_cloudformation(vpc.get('Tags', [])):
+                          vpc_id = vpc['VpcId']
+                          
+                          try:
+                              # Delete VPC dependencies in correct order with proper cleanup
+                              
+                              # 1. Delete all network interfaces in subnets first
+                              subnets = ec2.describe_subnets(Filters=[{'Name': 'vpc-id', 'Values': [vpc_id]}])
+                              for subnet in subnets['Subnets']:
+                                  subnet_id = subnet['SubnetId']
+                                  # Delete ENIs in this subnet
+                                  try:
+                                      enis = ec2.describe_network_interfaces(Filters=[{'Name': 'subnet-id', 'Values': [subnet_id]}])
+                                      for eni in enis['NetworkInterfaces']:
+                                          if eni['Status'] == 'available':
+                                              try:
+                                                  ec2.delete_network_interface(NetworkInterfaceId=eni['NetworkInterfaceId'])
+                                              except:
+                                                  pass
+                                  except:
+                                      pass
+                              
+                              # 2. Disassociate route tables from subnets, then delete non-main route tables
+                              route_tables = ec2.describe_route_tables(Filters=[{'Name': 'vpc-id', 'Values': [vpc_id]}])
+                              for rt in route_tables['RouteTables']:
+                                  is_main = any(assoc.get('Main', False) for assoc in rt.get('Associations', []))
+                                  if not is_main:
+                                      # Disassociate from subnets first
+                                      for assoc in rt.get('Associations', []):
+                                          if not assoc.get('Main', False) and 'SubnetId' in assoc:
+                                              try:
+                                                  ec2.disassociate_route_table(AssociationId=assoc['RouteTableAssociationId'])
+                                              except:
+                                                  pass
+                                      # Now delete the route table
+                                      try:
+                                          ec2.delete_route_table(RouteTableId=rt['RouteTableId'])
+                                      except Exception as e:
+                                          print(f"Error deleting route table {rt['RouteTableId']}: {e}")
+                              
+                              # 3. Delete subnets
+                              for subnet in subnets['Subnets']:
+                                  try:
+                                      ec2.delete_subnet(SubnetId=subnet['SubnetId'])
+                                  except Exception as e:
+                                      print(f"Error deleting subnet {subnet['SubnetId']}: {e}")
+                              
+                              # 4. Detach and delete internet gateways
+                              igws = ec2.describe_internet_gateways(Filters=[{'Name': 'attachment.vpc-id', 'Values': [vpc_id]}])
+                              for igw in igws['InternetGateways']:
+                                  try:
+                                      ec2.detach_internet_gateway(InternetGatewayId=igw['InternetGatewayId'], VpcId=vpc_id)
+                                      ec2.delete_internet_gateway(InternetGatewayId=igw['InternetGatewayId'])
+                                  except Exception as e:
+                                      print(f"Error deleting IGW {igw['InternetGatewayId']}: {e}")
+                              
+                              # 5. Delete VPN gateways
+                              try:
+                                  vpn_gateways = ec2.describe_vpn_gateways(Filters=[{'Name': 'attachment.vpc-id', 'Values': [vpc_id]}])
+                                  for vgw in vpn_gateways['VpnGateways']:
+                                      attachments = [att for att in vgw.get('VpcAttachments', []) if att['VpcId'] == vpc_id]
+                                      for att in attachments:
+                                          if att['State'] == 'attached':
+                                              ec2.detach_vpn_gateway(VpnGatewayId=vgw['VpnGatewayId'], VpcId=vpc_id)
+                                      ec2.delete_vpn_gateway(VpnGatewayId=vgw['VpnGatewayId'])
+                              except Exception as e:
+                                  print(f"Error handling VPN gateways: {e}")
+                              
+                              # 6. Delete security groups (except default)
+                              sgs = ec2.describe_security_groups(Filters=[{'Name': 'vpc-id', 'Values': [vpc_id]}])
+                              for sg in sgs['SecurityGroups']:
+                                  if sg['GroupName'] != 'default':
+                                      try:
+                                          ec2.delete_security_group(GroupId=sg['GroupId'])
+                                      except Exception as e:
+                                          print(f"Error deleting security group {sg['GroupId']}: {e}")
+                              
+                              # 7. Delete network ACLs (except default)
+                              try:
+                                  acls = ec2.describe_network_acls(Filters=[{'Name': 'vpc-id', 'Values': [vpc_id]}])
+                                  for acl in acls['NetworkAcls']:
+                                      if not acl['IsDefault']:
+                                          ec2.delete_network_acl(NetworkAclId=acl['NetworkAclId'])
+                              except Exception as e:
+                                  print(f"Error deleting network ACLs: {e}")
+                              
+                              # 8. Finally delete VPC
+                              ec2.delete_vpc(VpcId=vpc_id)
+                              print(f"Deleted VPC: {vpc_id}")
+                              
+                          except Exception as e:
+                              print(f"Error deleting VPC {vpc_id}: {e}")
+              
+              return {'statusCode': 200, 'body': 'Cleanup completed'}
+
+          def is_managed_by_cloudformation(tags):
+              """Check if resource has managed_by=cloudformation tag"""
+              for tag in tags:
+                  if tag['Key'] == 'managed_by' and tag['Value'] == 'cloudformation':
+                      return True
+              return False
+
+  # EventBridge Rule for Daily Schedule
+  CleanupScheduleRule:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: daily-aws-cleanup
+      Description: 'Trigger daily AWS cleanup Lambda'
+      ScheduleExpression: !Ref ScheduleExpression
+      State: ENABLED
+      Tags:
+        - Key: managed_by
+          Value: cloudformation
+      Targets:
+        - Arn: !GetAtt CleanupLambdaFunction.Arn
+          Id: CleanupLambdaTarget
+
+  # Permission for EventBridge to invoke Lambda
+  LambdaInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref CleanupLambdaFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt CleanupScheduleRule.Arn
+
+Outputs:
+  LambdaFunctionName:
+    Description: 'Name of the cleanup Lambda function'
+    Value: !Ref CleanupLambdaFunction
+    Export:
+      Name: !Sub '${AWS::StackName}-LambdaFunction'
+  
+  ScheduleRule:
+    Description: 'EventBridge rule for scheduling'
+    Value: !Ref CleanupScheduleRule
+    Export:
+      Name: !Sub '${AWS::StackName}-ScheduleRule'
