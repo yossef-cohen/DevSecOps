@@ -1,0 +1,62 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: 'AWS::LanguageExtensions'
+Description: CloudFormation template for IAM roles
+
+Mappings:
+  AllMightyRoles:
+    # lambda:
+    #   ServicePrincipal: "lambda.amazonaws.com"
+    # Kinesis:
+    #   ServicePrincipal: "kinesis.amazonaws.com"
+    ec2:
+      ServicePrincipal: "ec2.amazonaws.com"
+    APIGateway:
+      ServicePrincipal: "apigateway.amazonaws.com"
+    EventBridge:
+      ServicePrincipal: "events.amazonaws.com"
+    S3:
+      ServicePrincipal: "s3.amazonaws.com"
+    DynamoDB:
+      ServicePrincipal: "dynamodb.amazonaws.com"
+    Glue:
+      ServicePrincipal: "glue.amazonaws.com"
+    Athena:
+      ServicePrincipal: "athena.amazonaws.com"
+    QuickSight:
+      ServicePrincipal: "quicksight.amazonaws.com"
+    SNS:
+      ServicePrincipal: "sns.amazonaws.com"
+    CloudWatch:
+      ServicePrincipal: "cloudwatch.amazonaws.com"
+    WAF:
+      ServicePrincipal: "wafv2.amazonaws.com"
+    CloudFormation:
+      ServicePrincipal: "cloudformation.amazonaws.com"
+
+Resources:
+  'Fn::ForEach::IAMRoles':
+    - RoleName
+    - [APIGateway, EventBridge, S3, DynamoDB, Glue, Athena, QuickSight, SNS, CloudWatch, WAF, CloudFormation] # Lambda, Kinesis
+    - 'Role${RoleName}':
+        Type: AWS::IAM::Role
+        Properties:
+          RoleName: !Sub 'All-Mighty-${RoleName}'
+          AssumeRolePolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Principal:
+                  Service: !FindInMap [AllMightyRoles, !Ref RoleName, ServicePrincipal]
+                Action: sts:AssumeRole
+          ManagedPolicyArns:
+            - arn:aws:iam::aws:policy/AdministratorAccess
+
+Outputs:
+  'Fn::ForEach::IAMRoleOutputs':
+    - OutputsName
+    - [APIGateway, EventBridge, S3, DynamoDB, Glue, Athena, QuickSight, SNS, CloudWatch, WAF, CloudFormation] # Lambda, Kinesis
+    - 'AllMighty${OutputsName}':
+        Description: !Sub 'ARN of the All-Mighty ${OutputsName} Role'
+        Value: !GetAtt [!Sub "Role${OutputsName}", Arn]
+        Export:
+          Name: !Sub 'All-Mighty-${OutputsName}'
