@@ -1,250 +1,184 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: 'This template defines the serverless compute layer of the project. It connects the ingestion pipeline (API Gateway + Kinesis) to the data stores (DynamoDB + S3) by running validation, enrichment, and aggregation logic inside Lambda functions. It also sets up failure handling and retries.'
+Description: 'Serverless compute and storage layer connecting Kinesis → Lambda → S3 → DynamoDB with validation, enrichment, and aggregation logic.'
 
 Resources:
-####################
-# Lambda Functions #
-####################
+
+#####################
+# Lambda Functions  #
+#####################
 
   ValidatorEnricherLambda:
     Type: AWS::Lambda::Function
     Properties:
       FunctionName: validator_enricher
-      Description: 'Validates and enriches incoming events'
-      Runtime: 'python3.13' # Maybe need to be change the runtime environment python3.12
-      Handler: 'index.validator'
+      Description: 'Validates and enriches incoming events from Kinesis, writes to S3.'
+      Runtime: python3.12
+      Handler: index.validator
+      Environment:
+        Variables:
+          RAW_BUCKET: !Ref S3Raw
+          PROCESSED_BUCKET: !Ref S3Processed
       DeadLetterConfig:
-        TargetArn: !GetAtt ValidatorDLQ.Arn
-      Role: arn:aws:iam::937115287175:role/All-Mighty-Lambda # Make a yaml file for the role
+        TargetArn: !ImportValue Streaming-ValidatorDLQArn
+      Role: !ImportValue All-Mighty-Lambda
       Code:
         ZipFile: |
           import json
+          import boto3
+          import os
           import base64
           from datetime import datetime
+          s3 = boto3.client("s3")
+          raw_bucket = os.environ["RAW_BUCKET"]
+          processed_bucket = os.environ["PROCESSED_BUCKET"]
 
           def validator(event, context):
-              """
-              Validator Lambda:
-              - Decodes base64 Kinesis payloads
-              - Validates required fields (symbol, price)
-              - Enriches with timestamp
-              - Logs bad records
-              """
               output = []
               for record in event.get("Records", []):
                   try:
-                      # Decode Base64
                       payload = base64.b64decode(record["kinesis"]["data"]).decode("utf-8")
+                      s3.put_object(
+                          Bucket=raw_bucket,
+                          Key=f"raw/{datetime.utcnow().timestamp()}.json",
+                          Body=payload
+                      )
                       data = json.loads(payload)
-
-                      # Validate fields
                       if "symbol" not in data or "price" not in data:
                           raise ValueError("Missing required fields")
-
-                      # Enrich
                       data["validated_at"] = datetime.utcnow().isoformat()
                       output.append(data)
-
+                      s3.put_object(
+                          Bucket=processed_bucket,
+                          Key=f"validated/{data['symbol']}-{datetime.utcnow().timestamp()}.json",
+                          Body=json.dumps(data)
+                      )
                   except Exception as e:
                       print(f"Bad record skipped: {e}")
-
               print(f"Validated batch: {output}")
               return output
+
 
   AggregatorLambda:
     Type: AWS::Lambda::Function
     Properties:
       FunctionName: aggregator
-      Description: 'Aggregates events for batch processing'
-      Runtime: 'python3.13' # Maybe need to be change the runtime environment python3.12
-      Handler: 'index.aggregator'
-      Role: arn:aws:iam::937115287175:role/All-Mighty-Lambda # Make a yaml file for the role
+      Description: 'Triggered by S3 (Processed), aggregates events, writes results to DynamoDB.'
+      Runtime: python3.12
+      Handler: index.aggregator
+      Environment:
+        Variables:
+          METRICS_TABLE: !ImportValue FP-Datastores-MetricsTable
+      Role: !ImportValue All-Mighty-Lambda
       DeadLetterConfig:
-        TargetArn: !GetAtt AggregatorDLQ.Arn
+        TargetArn: !ImportValue Streaming-AggregatorDLQArn
       Code:
         ZipFile: |
-          import json
-          import base64
+          import json, boto3, os
+          from datetime import datetime
+
+          s3 = boto3.client("s3")
+          dynamodb = boto3.resource("dynamodb")
+          table = dynamodb.Table(os.environ["METRICS_TABLE"])
 
           def aggregator(event, context):
-              """
-              Aggregator Lambda:
-              - Reads validated events
-              - Groups by 'symbol' (or 'city')
-              - Computes average price per group
-              """
               aggregates = {}
+              for record in event["Records"]:
+                  bucket = record["s3"]["bucket"]["name"]
+                  key = record["s3"]["object"]["key"]
+                  response = s3.get_object(Bucket=bucket, Key=key)
+                  data = json.loads(response["Body"].read().decode("utf-8"))
+                  key_field = data.get("symbol") or data.get("city")
+                  price = data.get("price")
+                  if key_field and isinstance(price, (int, float)):
+                      aggregates.setdefault(key_field, []).append(price)
+              results = {k: sum(v)/len(v) for k, v in aggregates.items()}
+              for symbol, avg in results.items():
+                  table.put_item(Item={
+                      "symbol": symbol,
+                      "Timestamp": int(datetime.utcnow().timestamp()),
+                      "average": avg,
+                      "TTL": int(datetime.utcnow().timestamp()) + 86400
+                  })
+              print(f"Stored averages: {results}")
 
-              for record in event.get("Records", []):
-                  try:
-                      payload = base64.b64decode(record["kinesis"]["data"]).decode("utf-8")
-                      data = json.loads(payload)
+#########################
+# Lambda Invoke Permission
+#########################
 
-                      key = data.get("symbol") or data.get("city")
-                      price = data.get("price")
+  AggregatorInvokePermission:
+    Type: AWS::Lambda::Permission
+    DependsOn: AggregatorLambda
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref AggregatorLambda
+      Principal: s3.amazonaws.com
 
-                      if key and isinstance(price, (int, float)):
-                          if key not in aggregates:
-                              aggregates[key] = []
-                          aggregates[key].append(price)
 
-                  except Exception as e:
-                      print(f"Error processing record: {e}")
+###################
+#    S3 Buckets   #
+###################
 
-              results = {k: sum(v) / len(v) for k, v in aggregates.items() if v}
-              print(f"Aggregated results: {results}")
-              return results
+  S3Raw:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: 'yossef-raw-bucket'
+      AccessControl: Private
+      VersioningConfiguration:
+        Status: Enabled
+
+  S3Processed:
+    Type: AWS::S3::Bucket
+    DependsOn:
+      - AggregatorLambda
+      - AggregatorInvokePermission
+    Properties:
+      BucketName: 'yossef-processed-bucket'
+      AccessControl: Private
+      VersioningConfiguration:
+        Status: Enabled
+      NotificationConfiguration:
+        LambdaConfigurations:
+          - Event: "s3:ObjectCreated:*"
+            Function: !GetAtt AggregatorLambda.Arn
 
 ####################
 #  Event Sources   #
 ####################
 
-  KinesisStream:
-    Type: AWS::Kinesis::Stream
-    Properties:
-      Name: KinesisStream
-      ShardCount: 1 # Each shard gives you: 1 MB/sec write throughput, 2 MB/sec read throughput, Up to 1,000 records per second
-
   ValidatorEnricherEventSourceMapping:
     Type: AWS::Lambda::EventSourceMapping
     Properties:
-      EventSourceArn: !GetAtt KinesisStream.Arn
+      EventSourceArn: !ImportValue Streaming-KinesisStreamArn
       FunctionName: !Ref ValidatorEnricherLambda
-      StartingPosition: LATEST # Process only new incoming events from now on
+      StartingPosition: LATEST
       BatchSize: 10
       Enabled: true
-
-  AggregatorEventSourceMapping:
-    Type: AWS::Lambda::EventSourceMapping
-    Properties:
-      EventSourceArn: !GetAtt KinesisStream.Arn
-      FunctionName: !Ref AggregatorLambda
-      StartingPosition: LATEST # Process only new incoming events from now on
-      BatchSize: 10
-      Enabled: true
-
-##################
-#   SQS Queues   #
-##################
-
-# If a batch fails, you want to capture the raw event payloads for debugging or manual reprocessing.
-
-  ValidatorDLQ:
-    Type: AWS::SQS::Queue
-    Properties:
-      QueueName: validator_dlq
-      VisibilityTimeout: 60 # 1 minute
-
-  AggregatorDLQ:
-    Type: AWS::SQS::Queue
-    Properties:
-      QueueName: aggregator_dlq
-      VisibilityTimeout: 60 # 1 minute
 
 ##################
 #    Outputs     #
 ##################
 
 Outputs:
-
   ValidatorEnricherLambda:
     Description: 'Validator and Enricher Lambda Function'
     Value: !Ref ValidatorEnricherLambda
     Export:
-      Name: !Sub "${AWS::StackName}-ValidatorEnricherLambda"
+      Name: "ValidatorEnricherLambda"
 
   AggregatorLambda:
     Description: 'Aggregator Lambda Function'
     Value: !Ref AggregatorLambda
     Export:
-      Name: !Sub "${AWS::StackName}-AggregatorLambda"
+      Name: "AggregatorLambda"
 
-  KinesisStream:
-    Description: 'Kinesis Stream'
-    Value: !Ref KinesisStream
+  RawS3Bucket:
+    Description: Raw S3 Bucket Name
+    Value: !Ref S3Raw
     Export:
-      Name: !Sub "${AWS::StackName}-KinesisStream"
-
-  ValidatorDLQUrl:
-    Description: 'URL of the Validator Dead Letter Queue'
-    Value: !Ref ValidatorDLQ
+      Name: "BucketRaw"
+  
+  ProcessedS3Bucket:
+    Description: Processed S3 Bucket Name
+    Value: !Ref S3Processed
     Export:
-      Name: !Sub "${AWS::StackName}-ValidatorDLQUrl"
-
-  AggregatorDLQUrl:
-    Description: 'URL of the Aggregator Dead Letter Queue'
-    Value: !Ref AggregatorDLQ
-    Export:
-      Name: !Sub "${AWS::StackName}-AggregatorDLQUrl"
-
-# ==============================
-#   TO-DO LIST: MOVE KINESIS & SQS TO STEP 3
-# ==============================
-
-# 📦 Kinesis Stream
-# [ ] Move "KinesisStream" resource from compute.yaml → ingestion.yaml.
-# [ ] In compute.yaml, replace with a Parameter:
-#       Parameters:
-#         KinesisStreamArn:
-#           Type: String
-#           Description: ARN of the ingestion Kinesis stream
-# [ ] Update EventSourceMappings in compute.yaml to use:
-#       EventSourceArn: !Ref KinesisStreamArn
-
-# 📬 Dead Letter Queues (DLQs)
-# [ ] Move "ValidatorDLQ" and "AggregatorDLQ" resources from compute.yaml → ingestion.yaml.
-# [ ] In compute.yaml, replace with Parameters:
-#       ValidatorDLQArn:
-#         Type: String
-#         Description: ARN of the Validator DLQ
-#       AggregatorDLQArn:
-#         Type: String
-#         Description: ARN of the Aggregator DLQ
-# [ ] Update DeadLetterConfig in each Lambda to use:
-#       DeadLetterConfig:
-#         TargetArn: !Ref ValidatorDLQArn
-#         TargetArn: !Ref AggregatorDLQArn
-
-# 📊 Outputs (Step 3)
-# [ ] In ingestion.yaml, export Outputs for:
-#       - KinesisStreamArn
-#       - ValidatorDLQArn
-#       - AggregatorDLQArn
-# [ ] In compute.yaml, import with:
-#       Parameters + cross-stack reference (Fn::ImportValue).
-
-
-# ==============================
-#   TO-DO LIST FOR COMPUTE.YAML
-# ==============================
-
-# 🔐 IAM Roles
-# [ ] Create separate IAM roles for each Lambda (AWS::IAM::Role).
-#     - Validator Role → dynamodb:PutItem, s3:PutObject, logs:* 
-#     - Aggregator Role → dynamodb:UpdateItem, logs:*
-# [ ] Replace the placeholder "All-Mighty-Lambda" ARN with these roles.
-
-# 📜 Permissions
-# [ ] Add AWS::Lambda::Permission if EventBridge Scheduler or S3 events 
-#     are later used to invoke Lambdas (not needed for Kinesis mappings).
-
-# 📦 S3 Integration (Step 2)
-# [ ] Add S3 buckets:
-#     - raw/ → unprocessed events
-#     - processed/ → Validator writes cleaned data here
-# [ ] Update Validator Lambda IAM role with s3:PutObject permissions.
-
-
-# 🗄 DynamoDB Integration (Step 5)
-# [ ] Connect Validator and Aggregator Lambdas to DynamoDB Global Tables.
-# [ ] Update IAM roles with dynamodb:PutItem / dynamodb:UpdateItem access.
-
-# ⏱ Lambda Settings
-# [ ] Explicitly set Timeout for both Lambdas (instead of default 3s).
-#     - Validator → ~30s
-#     - Aggregator → ~60s
-# [ ] Adjust DLQ VisibilityTimeout (best practice = 6× Lambda timeout).
-
-# ==============================
-#       END OF TO-DO LIST
-# ==============================
+      Name: "BucketProcessed"

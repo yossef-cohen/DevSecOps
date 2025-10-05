@@ -1,0 +1,68 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'DynamoDB Datastores'
+
+Resources:
+
+########################
+#   DynamoDB Metrics   #  
+########################
+
+  MetricsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: 'Metrics'
+      AttributeDefinitions:
+        - AttributeName: 'symbol'
+          AttributeType: 'S'
+        - AttributeName: 'Timestamp'
+          AttributeType: 'N'
+      KeySchema:
+        - AttributeName: 'symbol'
+          KeyType: 'HASH'
+        - AttributeName: 'Timestamp'
+          KeyType: 'RANGE'
+      BillingMode: PAY_PER_REQUEST
+      TimeToLiveSpecification:
+        AttributeName: 'TTL'
+        Enabled: true
+
+########################
+# DynamoDB  Dashboards #
+########################
+
+  DashboardsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: 'Dashboards'
+      AttributeDefinitions:
+        - AttributeName: 'symbol'
+          AttributeType: 'S'
+        - AttributeName: 'Timestamp'
+          AttributeType: 'N'
+      KeySchema:
+        - AttributeName: 'symbol'
+          KeyType: 'HASH'
+        - AttributeName: 'Timestamp'
+          KeyType: 'RANGE'
+      BillingMode: PAY_PER_REQUEST
+      TimeToLiveSpecification:
+        AttributeName: 'TTL'
+        Enabled: true
+
+
+########################
+#        Outputs       #
+########################
+
+Outputs:
+  MetricsTable:
+    Description: 'Metrics DynamoDB Table Name'
+    Value: !Ref MetricsTable
+    Export:
+      Name: "FP-Datastores-MetricsTable"
+
+  DashboardsTable:
+    Description: 'Dashboards DynamoDB Table Name'
+    Value: !Ref DashboardsTable
+    Export:
+      Name: "FP-Datastores-DashboardsTable"

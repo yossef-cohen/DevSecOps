@@ -1,0 +1,169 @@
+# 🧭 Step 6 – Monitoring & Security (Future To-Do List)
+
+# (Optional enhancement – add later when ready)
+
+# 🎯 Objective
+
+# Enhance the existing serverless data pipeline with visibility, alerting, and protection,
+# so you can detect, respond, and prevent issues automatically.
+
+# ✅ High-Level Goals
+
+# Add CloudWatch Monitoring for Lambda, Kinesis, DynamoDB, and S3.
+
+# Set up centralized alerting via Amazon SNS.
+
+# Define metric filters for key log events (e.g., validation failures).
+
+# Build a CloudWatch Dashboard for visual insights.
+
+# (Optional) Add KMS encryption & fine-grained IAM policies for data security.
+
+# 🧩 Detailed To-Do List
+# 🔹 1️⃣ Create Monitoring Template
+
+# 📄 File: FP_Monitoring.yaml
+
+# Purpose: Isolate all CloudWatch, SNS, and optional KMS resources.
+
+# Include:
+
+# SNS topic (DevSecOpsAlerts)
+
+# CloudWatch alarms for:
+
+# Validator Lambda Errors
+
+# Aggregator Lambda Errors
+
+# Kinesis lag (IteratorAgeMilliseconds)
+
+# DynamoDB throttles (ThrottledRequests)
+
+# Optional: CloudWatch Dashboard
+
+# 🔹 2️⃣ Add SNS Notification System
+
+# Resources to include:
+
+# AWS::SNS::Topic → DevSecOpsAlerts
+
+# AWS::SNS::Subscription → your email (e.g., you@example.com)
+
+# Action:
+# Confirm the SNS subscription after deploying the stack.
+
+# 🔹 3️⃣ Add CloudWatch Alarms
+
+# Add these alarms:
+
+# A. Validator Lambda
+
+# Trigger when the function reports more than 1 error in 5 minutes:
+
+# MetricName: Errors
+# Namespace: AWS/Lambda
+# Threshold: 1
+
+# B. Aggregator Lambda
+
+# Same setup — errors > 1 within 5 minutes.
+
+# C. DynamoDB
+
+# Trigger if ThrottledRequests > 0 in 5 minutes.
+
+# D. Kinesis Stream
+
+# Trigger if IteratorAgeMilliseconds > 30,000 (30 seconds).
+
+# All alarms should point to:
+
+# AlarmActions:
+#   - !Ref DevSecOpsAlerts
+
+# 🔹 4️⃣ Add Log Metric Filters (Optional but powerful)
+
+# Extract metrics directly from logs, e.g.:
+
+# Pattern "Bad record skipped" → Metric BadRecords
+
+# Pattern "Stored averages" → Metric AggregationsCompleted
+
+# This helps track data quality in near real-time.
+
+# 🔹 5️⃣ Add CloudWatch Dashboard (Optional)
+
+# Create one view to visualize metrics:
+
+# Lambda Invocations, Errors, Duration
+
+# DynamoDB Reads/Writes
+
+# Kinesis Lag
+
+# S3 Object Count
+
+# Template resource:
+
+# AWS::CloudWatch::Dashboard
+
+# 🔹 6️⃣ (Optional Security Add-ons)
+
+# When you revisit security:
+
+# Enable SSE (Server-Side Encryption) for DynamoDB & S3
+
+# SSESpecification:
+#   SSEEnabled: true
+
+
+# Add KMS key for encryption (AWS::KMS::Key)
+
+# Verify IAM roles use least-privilege policies
+
+# Enable CloudTrail data events for S3 & Lambda (audit logging)
+
+# 🔹 7️⃣ Test & Validate
+
+# After deployment:
+
+# Confirm alarms are created in CloudWatch → Alarms
+
+# Check log groups exist for each Lambda
+
+# Trigger a test failure → confirm you get an SNS email
+
+# Review your CloudWatch Dashboard for visibility
+
+# 🔹 8️⃣ Update Deployment Order
+
+# New deployment flow (if you add Step 6 later):
+
+# Order	Stack	Purpose
+# 1️⃣	FP_Roles.yaml	IAM
+# 2️⃣	FP_networking.yaml	VPC, Subnets
+# 3️⃣	FP_streaming.yaml	Kinesis
+# 4️⃣	FP_Datastores.yaml	DynamoDB
+# 5️⃣	FP_Lambda_Compute.yaml	Lambda + S3
+# 6️⃣	FP_Monitoring.yaml	✅ Monitoring + Alerting Layer
+# ✅ Summary Checklist
+# Task	Description	Status
+# Create FP_Monitoring.yaml	New monitoring template	☐
+# Add SNS Topic + Subscription	Central alerting	☐
+# Add 4 CloudWatch Alarms	Lambda + DynamoDB + Kinesis	☐
+# Add Metric Filters (optional)	Log-based metrics	☐
+# Add Dashboard (optional)	Visualization	☐
+# Add Encryption (optional)	SSE/KMS	☐
+# Test Notifications	Verify email alerts	☐
+# 🧠 Outcome
+
+# Once you complete Step 6 in the future:
+
+# You’ll have auto-alerting on all failures
+
+# A real-time dashboard for system health
+
+# Early warnings for performance issues
+
+# A DevSecOps-ready observability layer 🚀

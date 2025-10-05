@@ -1,0 +1,89 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'AWS Glue Analytics Layer – Database and Crawler for processed S3 data'
+
+Resources:
+
+########################
+#  Analytics Database  #  
+########################
+
+  AnalyticsDatabase:
+    Type: AWS::Glue::Database
+    Properties:
+      CatalogId: !Ref AWS::AccountId
+      DatabaseInput:
+        Name: banana_db
+        Description: "Metadata catalog for processed S3 data"
+
+  ProcessedDataCrawler:
+      Type: AWS::Glue::Crawler
+      Properties:
+        Name: 'ProcessedDataCrawler'
+        Role: !ImportValue All-Mighty-Glue
+        DatabaseName: !Ref AnalyticsDatabase
+        Targets:
+          S3Targets:
+            - Path: !ImportValue BucketProcessed
+        Schedule:
+          ScheduleExpression: "cron(0 * * * ? *)"  # runs every hour (optional)
+        SchemaChangePolicy:
+          UpdateBehavior: UPDATE_IN_DATABASE
+          DeleteBehavior: DEPRECATE_IN_DATABASE
+
+########################
+#        Athena        #
+########################
+
+  AthenaWorkGroup:
+    Type: AWS::Athena::WorkGroup
+    Properties:
+      Name: 'AthenaWorkGroup-Banana'
+      Description: 'Workgroup for querying processed data'
+      RecursiveDeleteOption: true
+      State: ENABLED
+      WorkGroupConfiguration:
+        ResultConfiguration:
+          OutputLocation: !Sub "s3://${BucketProcessed}/athena-results/"
+        EnforceWorkGroupConfiguration: true
+        PublishCloudWatchMetricsEnabled: true
+
+########################
+#   SampleAthenaQuery  #
+########################
+
+  SampleAthenaQuery:
+  Type: AWS::Athena::NamedQuery
+  Properties:
+    Database: !Ref AnalyticsDatabase
+    Description: "Quick test query to list the 10 latest validated records"
+    Name: "LatestValidatedRecords"
+    QueryString: |
+      SELECT symbol, price, validated_at
+      FROM validated
+      ORDER BY validated_at DESC
+      LIMIT 10;
+    WorkGroup: !Ref AthenaWorkGroup
+
+
+########################
+#        Outputs       #
+########################
+
+Outputs:
+  AnalyticsDatabase:
+    Description: "Glue Database for analytics"
+    Value: !Ref AnalyticsDatabase
+    Export:
+      Name: "Analytics-Glue-Database"
+
+  ProcessedDataCrawler:
+    Description: "AWS Glue crawler for processed S3 data"
+    Value: !Ref ProcessedDataCrawler
+    Export:
+      Name: "Analytics-ProcessedDataCrawler"
+
+  AthenaWorkGroup:
+    Description: "Athena WorkGroup configured for banana_db queries"
+    Value: !Ref AthenaWorkGroup
+    Export:
+      Name: "Analytics-Athena-WorkGroup"

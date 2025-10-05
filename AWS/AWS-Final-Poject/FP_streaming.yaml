@@ -1,0 +1,243 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Ingestion & Streaming Services'
+
+
+Resources:
+
+########################
+#    Kinesis Stream    #  
+########################
+
+  KinesisStream:
+    Type: AWS::Kinesis::Stream
+    Properties:
+      Name: 'StockStream'
+      ShardCount: 1
+      RetentionPeriodHours: 24
+
+########################
+#    SQS Dead-letter   #  
+########################
+
+  ValidatorDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: validator_dlq
+      MessageRetentionPeriod: 86400  # 1 day
+
+  AggregatorDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: aggregator_dlq
+      MessageRetentionPeriod: 86400  # 1 day
+
+########################
+# EventBridge Scheduler#  
+########################
+
+  EventBridgeScheduler:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: 'Scheduler'
+      ScheduleExpression: 'rate(1 minute)'
+      State: 'ENABLED'
+      Targets:
+        - Arn: !GetAtt KinesisStream.Arn   # ✅ actual Kinesis stream ARN
+          Id: 'KinesisTarget'
+          RoleArn: !ImportValue All-Mighty-EventBridge
+
+##################
+#   Api Gateway  #
+##################
+
+  ApiGateway:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Name: 'StockApi'
+      Description: 'API Gateway for Stock Data Ingestion'
+
+  ApiResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      ParentId: !GetAtt ApiGateway.RootResourceId
+      PathPart: 'Stock'
+      RestApiId: !Ref ApiGateway
+
+  ApiMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: NONE
+      HttpMethod: POST
+      ResourceId: !Ref ApiResource
+      RestApiId: !Ref ApiGateway
+      Integration:
+        IntegrationHttpMethod: POST
+        Type: AWS_PROXY
+        Uri: !Sub arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${StockFetcherLambda.Arn}/invocations
+
+##################
+#Lambda Function #
+##################
+
+  StockFetcherApiGatewayInvoke:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !Ref StockFetcherLambda
+      Principal: apigateway.amazonaws.com
+
+  StockFetcherLambda:
+    Type: AWS::Lambda::Function
+    Properties:
+      FunctionName: 'StockFetcher'
+      Handler: 'index.handler'
+      Role: !ImportValue All-Mighty-Lambda
+      Runtime: 'python3.13'
+      Timeout: 30
+      Environment:
+        Variables:
+          KINESIS_STREAM_NAME: !Ref KinesisStream 
+      Code:
+        ZipFile: |
+          import json
+          import boto3
+          import os
+          from botocore.exceptions import ClientError
+
+          kinesis_client = boto3.client('kinesis')
+          stream_name = os.environ['KINESIS_STREAM_NAME']
+
+          def handler(event, context):
+              try:
+                  body = json.loads(event['body'])
+                  symbol = body.get('symbol')
+                  price = body.get('price')
+                  city = body.get('city')
+
+                  if not symbol or not price:
+                      return {
+                          'statusCode': 400,
+                          'body': json.dumps({'message': 'Missing symbol or price'})
+                      }
+
+                  data = {
+                      'symbol': symbol,
+                      'price': price,
+                      'city': city
+                  }
+
+                  response = kinesis_client.put_record(
+                      StreamName=stream_name,
+                      Data=json.dumps(data),
+                      PartitionKey=symbol
+                  )
+
+                  return {
+                      'statusCode': 200,
+                      'body': json.dumps({'message': 'Data sent to Kinesis', 'response': response})
+                  }
+
+              except ClientError as e:
+                  return {
+                      'statusCode': 500,
+                      'body': json.dumps({'message': 'Error sending data to Kinesis', 'error': str(e)})
+                  }
+              except Exception as e:
+                  return {
+                      'statusCode': 500,
+                      'body': json.dumps({'message': 'Internal server error', 'error': str(e)})
+                  }
+
+
+##################
+#     Outputs    #
+##################
+
+
+Outputs:
+  KinesisStreamArn:
+    Description: ARN of Kinesis Stream
+    Value: !GetAtt KinesisStream.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-KinesisStreamArn"
+
+  ValidatorDLQArn:
+    Description: ARN of Validator DLQ
+    Value: !GetAtt ValidatorDLQ.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-ValidatorDLQArn"
+
+  AggregatorDLQArn:
+    Description: ARN of Aggregator DLQ
+    Value: !GetAtt AggregatorDLQ.Arn
+    Export:
+      Name: !Sub "${AWS::StackName}-AggregatorDLQArn"
+
+
+
+
+
+
+
+
+# 🧠 2️⃣ To-Do List: Add Deployment & Stage
+
+# Here’s the checklist (and you’ll only add a few lines).
+
+# Step	Resource	Purpose	Required
+# 1️⃣	ApiDeployment	Creates a deployment version of your API	✅ Yes
+# 2️⃣	ApiStage	Defines a stage (e.g., Prod) for that deployment	✅ Yes
+# 3️⃣	(Optional) Output stage URL	To easily find and test your endpoint	👍 Helpful
+# 🧾 3️⃣ Your To-Do YAML Additions (conceptually)
+
+# Below your existing ApiMethod, add this:
+
+#   ApiDeployment:
+#     Type: AWS::ApiGateway::Deployment
+#     Properties:
+#       RestApiId: !Ref ApiGateway
+#       StageName: Prod
+#     DependsOn: ApiMethod
+
+
+# ✅ This automatically creates a deployment under the stage name Prod.
+# If you want more control (e.g., stage variables, logging), you can separate them like this:
+
+#   ApiDeployment:
+#     Type: AWS::ApiGateway::Deployment
+#     Properties:
+#       RestApiId: !Ref ApiGateway
+#     DependsOn: ApiMethod
+
+#   ApiStage:
+#     Type: AWS::ApiGateway::Stage
+#     Properties:
+#       StageName: Prod
+#       Description: Production stage for Stock API
+#       RestApiId: !Ref ApiGateway
+#       DeploymentId: !Ref ApiDeployment
+#       TracingEnabled: true
+
+
+# ✅ DependsOn ensures the deployment only happens after your method is created, which avoids “stage not found” errors.
+
+# 🧮 4️⃣ (Optional but Very Useful) Add Output for the Full URL
+
+# At the bottom under Outputs:, add:
+
+#   ApiInvokeURL:
+#     Description: Invoke URL for Stock API
+#     Value: !Sub "https://${ApiGateway}.execute-api.${AWS::Region}.amazonaws.com/Prod/Stock"
+#     Export:
+#       Name: !Sub "${AWS::StackName}-ApiInvokeURL"
+
+
+# Then when you deploy, you can quickly see the API’s URL in CloudFormation outputs.
+
+# ✅ 5️⃣ Final “To-Do” Summary
+# Task	Description	Done
+# 🧱 Add ApiDeployment	Deploys your API to make it live	⬜
+# 🚀 Add ApiStage (optional but cleaner)	Controls your Prod stage settings	⬜
+# 🌐 Add ApiInvokeURL output	Lets you easily copy/paste your live URL	⬜
+# ⚙️ Deploy stack	aws cloudformation deploy ...	⬜
+# 🔍 Test endpoint	Run curl -X POST ... again	⬜

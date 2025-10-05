@@ -4,10 +4,10 @@ Description: CloudFormation template for IAM roles
 
 Mappings:
   AllMightyRoles:
-    # lambda:
-    #   ServicePrincipal: "lambda.amazonaws.com"
-    # Kinesis:
-    #   ServicePrincipal: "kinesis.amazonaws.com"
+    Lambda:
+      ServicePrincipal: "lambda.amazonaws.com"
+    Kinesis:
+      ServicePrincipal: "kinesis.amazonaws.com"
     ec2:
       ServicePrincipal: "ec2.amazonaws.com"
     APIGateway:
@@ -36,7 +36,7 @@ Mappings:
 Resources:
   'Fn::ForEach::IAMRoles':
     - RoleName
-    - [APIGateway, EventBridge, S3, DynamoDB, Glue, Athena, QuickSight, SNS, CloudWatch, WAF, CloudFormation] # Lambda, Kinesis
+    - [Lambda, Kinesis, APIGateway, EventBridge, S3, DynamoDB, Glue, Athena, QuickSight, SNS, CloudWatch, WAF, CloudFormation] # 
     - 'Role${RoleName}':
         Type: AWS::IAM::Role
         Properties:
@@ -54,7 +54,7 @@ Resources:
 Outputs:
   'Fn::ForEach::IAMRoleOutputs':
     - OutputsName
-    - [APIGateway, EventBridge, S3, DynamoDB, Glue, Athena, QuickSight, SNS, CloudWatch, WAF, CloudFormation] # Lambda, Kinesis
+    - [Lambda, Kinesis, APIGateway, EventBridge, S3, DynamoDB, Glue, Athena, QuickSight, SNS, CloudWatch, WAF, CloudFormation] # 
     - 'AllMighty${OutputsName}':
         Description: !Sub 'ARN of the All-Mighty ${OutputsName} Role'
         Value: !GetAtt [!Sub "Role${OutputsName}", Arn]
