@@ -148,7 +148,7 @@
 # 5️⃣	FP_Lambda_Compute.yaml	Lambda + S3
 # 6️⃣	FP_Monitoring.yaml	✅ Monitoring + Alerting Layer
 # ✅ Summary Checklist
-# Task	Description	Status
+# Task	Description	Status S
 # Create FP_Monitoring.yaml	New monitoring template	☐
 # Add SNS Topic + Subscription	Central alerting	☐
 # Add 4 CloudWatch Alarms	Lambda + DynamoDB + Kinesis	☐

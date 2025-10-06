@@ -43,7 +43,7 @@ Resources:
       State: ENABLED
       WorkGroupConfiguration:
         ResultConfiguration:
-          OutputLocation: !Sub "s3://${BucketProcessed}/athena-results/"
+          OutputLocation: !Sub "s3://${!ImportValue BucketProcessed}/athena-results/"
         EnforceWorkGroupConfiguration: true
         PublishCloudWatchMetricsEnabled: true
 
@@ -52,17 +52,17 @@ Resources:
 ########################
 
   SampleAthenaQuery:
-  Type: AWS::Athena::NamedQuery
-  Properties:
-    Database: !Ref AnalyticsDatabase
-    Description: "Quick test query to list the 10 latest validated records"
-    Name: "LatestValidatedRecords"
-    QueryString: |
-      SELECT symbol, price, validated_at
-      FROM validated
-      ORDER BY validated_at DESC
-      LIMIT 10;
-    WorkGroup: !Ref AthenaWorkGroup
+    Type: AWS::Athena::NamedQuery
+    Properties:
+      Database: !Ref AnalyticsDatabase
+      Description: "Quick test query to list the 10 latest validated records"
+      Name: "LatestValidatedRecords"
+      QueryString: |
+        SELECT symbol, price, validated_at
+        FROM validated
+        ORDER BY validated_at DESC
+        LIMIT 10;
+      WorkGroup: !Ref AthenaWorkGroup
 
 
 ########################

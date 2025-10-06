@@ -1,0 +1,139 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'Dashboard Layer with QuickSight and IAM Roles for access control'
+
+Resources:
+########################
+#   QuickSight Access  #
+########################
+
+  QuickSightAthenaDataSource:
+    Type: AWS::QuickSight::DataSource
+    Properties:
+      AwsAccountId: !Ref AWS::AccountId
+      DataSourceId: 'AthenaDataSource'
+      DataSourceParameters:
+        AthenaParameters:
+          WorkGroup: !ImportValue AthenaWorkGroup
+      Name: 'AthenaDataSource'
+      Type: ATHENA
+
+########################
+# QuickSight  Dataset  #
+########################
+
+  QuickSightValidatedDataset:
+    Type: AWS::QuickSight::Dataset
+    Properties:
+      AwsAccountId: !Ref AWS::AccountId
+      DataSetId: 'ValidatedDataset'
+      Name: 'ValidatedDataset'
+      ImportMode: SPICE
+      PhysicalTableMap:
+        Table1:
+          RelationalTable:
+            DataSourceArn: !Ref QuickSightAthenaDataSource
+            Catalog: AwsDataCatalog
+            Schema: 'banana_db'
+            Name: 'validated'
+
+########################
+# QuickSight Dashboard #
+########################
+
+  QuickSightDashboard:
+    Type: AWS::QuickSight::Dashboard
+    DependsOn: QuickSightValidatedDataset
+    Properties:
+      AwsAccountId: !Ref AWS::AccountId
+      DashboardId: 'ValidatedDashboard'
+      Name: 'ValidatedDashboard'
+      Definition:
+        DataSetIdentifierDeclarations:
+          - Identifier: 'ValidatedDataset'
+            DataSetArn: !GetAtt QuickSightValidatedDataset.Arn
+        Sheets:
+          - SheetId: 'Stocks'
+            Name: 'Stocks'
+            Visuals:
+              - VisualId: 'StockesTable'
+                TableVisual:
+                  Title:
+                    Visibility: VISIBLE
+                    FormatText:
+                      RichText: "<b>Stocks Data Overview</b>"
+                  ChartConfiguration:
+                    FieldWells:
+                      TableAggregatedFieldWells:
+                        GroupBy:
+                          - FieldId: 'symbol'
+                            Column:
+                              ColumnName: 'symbol'
+                              DataSetIdentifier: 'ValidatedDataset'
+                        Values:
+                          - FieldId: 'price'
+                            Column:
+                              ColumnName: 'price'
+                              DataSetIdentifier: 'ValidatedDataset'
+                  Subtitle:
+                    Visibility: VISIBLE
+                    FormatText:
+                      RichText: "Live data from banana_db.validated via Athena"
+        CalculatedFields: []
+        FilterGroups: []
+        ParameterDeclarations: []
+
+########################
+# CloudWatch Dashboard #
+########################
+
+  PipelineHealthDashboard:
+    Type: AWS::CloudWatch::Dashboard
+    Properties:
+      DashboardName: 'PipelineHealth'
+      DashboardBody: !Sub |
+        {
+          "widgets": [
+            {
+              "type": "metric",
+              "x": 0,
+              "y": 0,
+              "width": 12,
+              "height": 6,
+              "properties": {
+                "metrics": [
+                  [ "AWS/Lambda", "Invocations", "FunctionName", "validator_enricher" ],
+                  [ ".", "Errors", ".", "." ],
+                  [ "AWS/S3", "NumberOfObjects", "BucketName", "banana-processed-bucket" ],
+                  [ "AWS/DynamoDB", "SuccessfulRequestLatency", "TableName", "Metrics" ]
+                ],
+                "period": 300,
+                "stat": "Sum",
+                "region": "${AWS::Region}",
+                "title": "Pipeline Health Overview"
+              }
+            }
+          ]
+        }
+
+########################
+#        Outputs       #
+########################
+
+Outputs:
+  QuickSightDataSourceId:
+    Description: 'QuickSight DataSource ID for Athena'
+    Value: !Ref QuickSightAthenaDataSource
+    Export:
+      Name: "FP-Dashboards-QuickSightDataSource"
+
+  QuickSightValidatedDatasetId:
+    Description: 'QuickSight DataSet for validated stock/weather data'
+    Value: !Ref QuickSightValidatedDataset
+    Export:
+      Name: "FP-Dashboards-ValidatedDataSet"
+
+  QuickSightDashboardId:
+    Description: 'QuickSight Dashboard for validated dataset'
+    Value: !Ref QuickSightDashboard
+    Export:
+      Name: "FP-Dashboards-ValidatedDashboard"
