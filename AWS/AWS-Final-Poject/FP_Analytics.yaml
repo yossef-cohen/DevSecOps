@@ -23,7 +23,7 @@ Resources:
         DatabaseName: !Ref AnalyticsDatabase
         Targets:
           S3Targets:
-            - Path: !ImportValue BucketProcessed
+            - Path: !Sub "s3://${BucketProcessed}/validated/"  # I changed this to sub instead importvalue
         Schedule:
           ScheduleExpression: "cron(0 * * * ? *)"  # runs every hour (optional)
         SchemaChangePolicy:
@@ -43,7 +43,7 @@ Resources:
       State: ENABLED
       WorkGroupConfiguration:
         ResultConfiguration:
-          OutputLocation: !Sub "s3://${!ImportValue BucketProcessed}/athena-results/"
+          OutputLocation: "s3://yossef-processed-bucket/athena-results/"
         EnforceWorkGroupConfiguration: true
         PublishCloudWatchMetricsEnabled: true
 

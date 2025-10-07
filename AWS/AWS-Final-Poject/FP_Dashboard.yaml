@@ -13,7 +13,7 @@ Resources:
       DataSourceId: 'AthenaDataSource'
       DataSourceParameters:
         AthenaParameters:
-          WorkGroup: !ImportValue AthenaWorkGroup
+          WorkGroup: !ImportValue Analytics-Athena-WorkGroup
       Name: 'AthenaDataSource'
       Type: ATHENA
 
@@ -22,7 +22,7 @@ Resources:
 ########################
 
   QuickSightValidatedDataset:
-    Type: AWS::QuickSight::Dataset
+    Type: AWS::QuickSight::DataSet
     Properties:
       AwsAccountId: !Ref AWS::AccountId
       DataSetId: 'ValidatedDataset'
@@ -31,10 +31,18 @@ Resources:
       PhysicalTableMap:
         Table1:
           RelationalTable:
-            DataSourceArn: !Ref QuickSightAthenaDataSource
+            DataSourceArn: !GetAtt QuickSightAthenaDataSource.Arn
             Catalog: AwsDataCatalog
             Schema: 'banana_db'
             Name: 'validated'
+            InputColumns:
+              - Name: symbol
+                Type: STRING
+              - Name: price
+                Type: DECIMAL
+              - Name: validated_at
+                Type: DATETIME
+
 
 ########################
 # QuickSight Dashboard #
@@ -55,32 +63,30 @@ Resources:
           - SheetId: 'Stocks'
             Name: 'Stocks'
             Visuals:
-              - VisualId: 'StockesTable'
-                TableVisual:
-                  Title:
-                    Visibility: VISIBLE
-                    FormatText:
-                      RichText: "<b>Stocks Data Overview</b>"
+              - TableVisual:
+                  VisualId: 'StockesTable'
                   ChartConfiguration:
                     FieldWells:
                       TableAggregatedFieldWells:
                         GroupBy:
-                          - FieldId: 'symbol'
-                            Column:
-                              ColumnName: 'symbol'
-                              DataSetIdentifier: 'ValidatedDataset'
+                          - CategoricalDimensionField:
+                              FieldId: 'symbol'
+                              Column:
+                                ColumnName: 'symbol'
+                                DataSetIdentifier: 'ValidatedDataset'
                         Values:
-                          - FieldId: 'price'
-                            Column:
-                              ColumnName: 'price'
-                              DataSetIdentifier: 'ValidatedDataset'
-                  Subtitle:
-                    Visibility: VISIBLE
-                    FormatText:
-                      RichText: "Live data from banana_db.validated via Athena"
+                          - NumericalMeasureField:
+                              FieldId: 'price'
+                              Column:
+                                ColumnName: 'price'
+                                DataSetIdentifier: 'ValidatedDataset'
+                              AggregationFunction:
+                                SimpleNumericalAggregation: SUM
         CalculatedFields: []
         FilterGroups: []
         ParameterDeclarations: []
+
+
 
 ########################
 # CloudWatch Dashboard #

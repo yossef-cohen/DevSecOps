@@ -1,0 +1,50 @@
+# S3 Policy for athena and quicksight
+
+{
+    "Version": "2012-10-17",
+    "Statement": [
+        {
+            "Sid": "AllowAthenaWriteResults",
+            "Effect": "Allow",
+            "Principal": {
+                "Service": [
+                    "quicksight.amazonaws.com",
+                    "athena.amazonaws.com"
+                ]
+            },
+            "Action": [
+                "s3:PutObject",
+                "s3:GetObject",
+                "s3:ListBucket"
+            ],
+            "Resource": [
+                "arn:aws:s3:::yossef-processed-bucket/athena-results/*",
+                "arn:aws:s3:::yossef-processed-bucket"
+            ]
+        }
+    ]
+}
+
+
+# Quicksight role for athena 
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": ["s3:GetObject", "s3:PutObject", "s3:ListBucket"],
+      "Resource": [
+        "arn:aws:s3:::yossef-processed-bucket",
+        "arn:aws:s3:::yossef-processed-bucket/*"
+      ]
+    },
+    { "Effect": "Allow", "Action": ["athena:*", "glue:*"], "Resource": "*" }
+  ]
+}
+
+
+
+# Running crawler for first time in cloudshell
+aws glue start-crawler --name ProcessedDataCrawler
+aws glue get-crawler --name ProcessedDataCrawler --query 'Crawler.State'
+# When it returns "READY", your catalog is updated and Athena + QuickSight can see the new data.
