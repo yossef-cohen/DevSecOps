@@ -119,46 +119,46 @@ Resources:
 ###################
 
   S3Raw:
-  Type: AWS::S3::Bucket
-  Properties:
-    BucketName: 'yossef-raw-bucket'
-    AccessControl: Private
-    VersioningConfiguration:
-      Status: Enabled
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: 'yossef-raw-bucket'
+      AccessControl: Private
+      VersioningConfiguration:
+        Status: Enabled
 
-S3Processed:
-  Type: AWS::S3::Bucket
-  DependsOn:
-    - AggregatorLambda
-    - AggregatorInvokePermission
-  Properties:
-    BucketName: 'yossef-processed-bucket'
-    AccessControl: Private
-    VersioningConfiguration:
-      Status: Enabled
-    NotificationConfiguration:
-      LambdaConfigurations:
-        - Event: "s3:ObjectCreated:*"
-          Function: !GetAtt AggregatorLambda.Arn
+  S3Processed:
+    Type: AWS::S3::Bucket
+    DependsOn:
+      - AggregatorLambda
+      - AggregatorInvokePermission
+    Properties:
+      BucketName: 'yossef-processed-bucket'
+      AccessControl: Private
+      VersioningConfiguration:
+        Status: Enabled
+      NotificationConfiguration:
+        LambdaConfigurations:
+          - Event: "s3:ObjectCreated:*"
+            Function: !GetAtt AggregatorLambda.Arn
 
-S3ProcessedPolicy:
-  Type: AWS::S3::BucketPolicy
-  Properties:
-    Bucket: !Ref S3Processed
-    PolicyDocument:
-      Version: "2012-10-17"
-      Statement:
-        - Sid: "AllowAccountAthenaAndQuickSightAccess"
-          Effect: "Allow"
-          Principal:
-            AWS: !Sub "arn:aws:iam::${AWS::AccountId}:root"
-          Action:
-            - "s3:GetObject"
-            - "s3:PutObject"
-            - "s3:ListBucket"
-          Resource:
-            - !Sub "arn:aws:s3:::${S3Processed}"
-            - !Sub "arn:aws:s3:::${S3Processed}/*"
+  S3ProcessedPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref S3Processed
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: "AllowAccountAthenaAndQuickSightAccess"
+            Effect: "Allow"
+            Principal:
+              AWS: !Sub "arn:aws:iam::${AWS::AccountId}:root"
+            Action:
+              - "s3:GetObject"
+              - "s3:PutObject"
+              - "s3:ListBucket"
+            Resource:
+              - !Sub "arn:aws:s3:::${S3Processed}"
+              - !Sub "arn:aws:s3:::${S3Processed}/*"
 
 ####################
 #  Event Sources   #

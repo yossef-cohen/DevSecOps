@@ -1,6 +1,11 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Description: 'Dashboard Layer with QuickSight and IAM Roles for access control'
 
+Parameters:
+  QuickSightUserName:
+    Type: String
+    Description: "QuickSight username to assign permissions to (from Manage QuickSight → Users)"
+
 Resources:
 ########################
 #   QuickSight Access  #
@@ -27,7 +32,20 @@ Resources:
       AwsAccountId: !Ref AWS::AccountId
       DataSetId: 'ValidatedDataset'
       Name: 'ValidatedDataset'
-      ImportMode: SPICE
+      ImportMode: DIRECT_QUERY
+      Permissions:
+        - Principal: !Sub arn:aws:quicksight:${AWS::Region}:${AWS::AccountId}:user/default/${QuickSightUserName}
+          Actions:
+            - quicksight:DescribeDataSet
+            - quicksight:UpdateDataSet
+            - quicksight:DeleteDataSet
+            - quicksight:DescribeDataSetPermissions
+            - quicksight:UpdateDataSetPermissions
+            - quicksight:PassDataSet
+            - quicksight:DescribeIngestion
+            - quicksight:CreateIngestion
+            - quicksight:CancelIngestion
+            - quicksight:ListIngestions
       PhysicalTableMap:
         Table1:
           RelationalTable:
@@ -55,6 +73,12 @@ Resources:
       AwsAccountId: !Ref AWS::AccountId
       DashboardId: 'ValidatedDashboard'
       Name: 'ValidatedDashboard'
+      Permissions:
+        - Principal: !Sub arn:aws:quicksight:${AWS::Region}:${AWS::AccountId}:user/default/${QuickSightUserName}
+          Actions:
+            - quicksight:DescribeDashboard
+            - quicksight:QueryDashboard
+            - quicksight:ListDashboardVersions
       Definition:
         DataSetIdentifierDeclarations:
           - Identifier: 'ValidatedDataset'
@@ -85,8 +109,6 @@ Resources:
         CalculatedFields: []
         FilterGroups: []
         ParameterDeclarations: []
-
-
 
 ########################
 # CloudWatch Dashboard #

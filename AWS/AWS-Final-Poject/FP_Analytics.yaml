@@ -23,7 +23,7 @@ Resources:
         DatabaseName: !Ref AnalyticsDatabase
         Targets:
           S3Targets:
-            - Path: !Sub "s3://${BucketProcessed}/validated/"  # I changed this to sub instead importvalue
+            - Path: "s3://yossef-processed-bucket/validated/"  # I changed this to sub instead importvalue
         Schedule:
           ScheduleExpression: "cron(0 * * * ? *)"  # runs every hour (optional)
         SchemaChangePolicy:

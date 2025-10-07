@@ -75,6 +75,13 @@ Resources:
         Type: AWS_PROXY
         Uri: !Sub arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${StockFetcherLambda.Arn}/invocations
 
+  ApiDeployment:
+    Type: AWS::ApiGateway::Deployment
+    Properties:
+      RestApiId: !Ref ApiGateway
+      StageName: Prod
+    DependsOn: ApiMethod
+
 ##################
 #Lambda Function #
 ##################
@@ -148,7 +155,6 @@ Resources:
                       'body': json.dumps({'message': 'Internal server error', 'error': str(e)})
                   }
 
-
 ##################
 #     Outputs    #
 ##################
@@ -172,6 +178,12 @@ Outputs:
     Value: !GetAtt AggregatorDLQ.Arn
     Export:
       Name: !Sub "${AWS::StackName}-AggregatorDLQArn"
+
+  ApiInvokeURL:
+    Description: Invoke URL for Stock API
+    Value: !Sub "https://${ApiGateway}.execute-api.${AWS::Region}.amazonaws.com/Prod/Stock"
+    Export:
+      Name: !Sub "${AWS::StackName}-ApiInvokeURL"
 
 
 
