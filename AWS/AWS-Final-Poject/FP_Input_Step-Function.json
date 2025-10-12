@@ -1,0 +1,24 @@
+{
+  "Stacks": [
+    {
+      "StackName": "FP-Roles",
+      "TemplateURL": "https://s3.amazonaws.com/my-devsecops-templates/FP_Roles.yaml"
+    },
+    {
+      "StackName": "FP-Networking",
+      "TemplateURL": "https://s3.amazonaws.com/my-devsecops-templates/FP_Networking.yaml"
+    },
+    {
+      "StackName": "FP-Streaming",
+      "TemplateURL": "https://s3.amazonaws.com/my-devsecops-templates/FP_Streaming.yaml"
+    },
+    {
+      "StackName": "FP-Datastores",
+      "TemplateURL": "https://s3.amazonaws.com/my-devsecops-templates/FP_Datastores.yaml"
+    },
+    {
+      "StackName": "FP-Lambda",
+      "TemplateURL": "https://s3.amazonaws.com/my-devsecops-templates/FP_Lambda_Compute.yaml"
+    }
+  ]
+}

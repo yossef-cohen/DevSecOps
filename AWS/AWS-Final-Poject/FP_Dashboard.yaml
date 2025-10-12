@@ -3,6 +3,7 @@ Description: 'Dashboard Layer with QuickSight and IAM Roles for access control'
 
 Parameters:
   QuickSightUserName:
+    Default: 'yossef'
     Type: String
     Description: "QuickSight username to assign permissions to (from Manage QuickSight → Users)"
 

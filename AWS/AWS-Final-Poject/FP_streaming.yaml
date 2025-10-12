@@ -98,6 +98,11 @@ Resources:
     Properties:
       FunctionName: 'StockFetcher'
       Handler: 'index.handler'
+      VpcConfig:
+        SubnetIds:
+          - !ImportValue FP-Networking-PrivateSubnet1VPC1
+        SecurityGroupIds:
+          - !ImportValue FP-Networking-APIGatewaySecurityGroupId
       Role: !ImportValue All-Mighty-Lambda
       Runtime: 'python3.13'
       Timeout: 30
@@ -165,91 +170,22 @@ Outputs:
     Description: ARN of Kinesis Stream
     Value: !GetAtt KinesisStream.Arn
     Export:
-      Name: !Sub "${AWS::StackName}-KinesisStreamArn"
+      Name: !Sub "KinesisStreamArn"
 
   ValidatorDLQArn:
     Description: ARN of Validator DLQ
     Value: !GetAtt ValidatorDLQ.Arn
     Export:
-      Name: !Sub "${AWS::StackName}-ValidatorDLQArn"
+      Name: !Sub "ValidatorDLQArn"
 
   AggregatorDLQArn:
     Description: ARN of Aggregator DLQ
     Value: !GetAtt AggregatorDLQ.Arn
     Export:
-      Name: !Sub "${AWS::StackName}-AggregatorDLQArn"
+      Name: !Sub "AggregatorDLQArn"
 
   ApiInvokeURL:
     Description: Invoke URL for Stock API
     Value: !Sub "https://${ApiGateway}.execute-api.${AWS::Region}.amazonaws.com/Prod/Stock"
     Export:
-      Name: !Sub "${AWS::StackName}-ApiInvokeURL"
-
-
-
-
-
-
-
-
-# 🧠 2️⃣ To-Do List: Add Deployment & Stage
-
-# Here’s the checklist (and you’ll only add a few lines).
-
-# Step	Resource	Purpose	Required
-# 1️⃣	ApiDeployment	Creates a deployment version of your API	✅ Yes
-# 2️⃣	ApiStage	Defines a stage (e.g., Prod) for that deployment	✅ Yes
-# 3️⃣	(Optional) Output stage URL	To easily find and test your endpoint	👍 Helpful
-# 🧾 3️⃣ Your To-Do YAML Additions (conceptually)
-
-# Below your existing ApiMethod, add this:
-
-#   ApiDeployment:
-#     Type: AWS::ApiGateway::Deployment
-#     Properties:
-#       RestApiId: !Ref ApiGateway
-#       StageName: Prod
-#     DependsOn: ApiMethod
-
-
-# ✅ This automatically creates a deployment under the stage name Prod.
-# If you want more control (e.g., stage variables, logging), you can separate them like this:
-
-#   ApiDeployment:
-#     Type: AWS::ApiGateway::Deployment
-#     Properties:
-#       RestApiId: !Ref ApiGateway
-#     DependsOn: ApiMethod
-
-#   ApiStage:
-#     Type: AWS::ApiGateway::Stage
-#     Properties:
-#       StageName: Prod
-#       Description: Production stage for Stock API
-#       RestApiId: !Ref ApiGateway
-#       DeploymentId: !Ref ApiDeployment
-#       TracingEnabled: true
-
-
-# ✅ DependsOn ensures the deployment only happens after your method is created, which avoids “stage not found” errors.
-
-# 🧮 4️⃣ (Optional but Very Useful) Add Output for the Full URL
-
-# At the bottom under Outputs:, add:
-
-#   ApiInvokeURL:
-#     Description: Invoke URL for Stock API
-#     Value: !Sub "https://${ApiGateway}.execute-api.${AWS::Region}.amazonaws.com/Prod/Stock"
-#     Export:
-#       Name: !Sub "${AWS::StackName}-ApiInvokeURL"
-
-
-# Then when you deploy, you can quickly see the API’s URL in CloudFormation outputs.
-
-# ✅ 5️⃣ Final “To-Do” Summary
-# Task	Description	Done
-# 🧱 Add ApiDeployment	Deploys your API to make it live	⬜
-# 🚀 Add ApiStage (optional but cleaner)	Controls your Prod stage settings	⬜
-# 🌐 Add ApiInvokeURL output	Lets you easily copy/paste your live URL	⬜
-# ⚙️ Deploy stack	aws cloudformation deploy ...	⬜
-# 🔍 Test endpoint	Run curl -X POST ... again	⬜
+      Name: !Sub "ApiInvokeURL"

@@ -1,0 +1,73 @@
+{
+  "Comment": "Deploy multiple CloudFormation stacks sequentially",
+  "StartAt": "ProcessStacks",
+  "States": {
+    "ProcessStacks": {
+      "Type": "Map",
+      "ItemsPath": "$.Stacks",
+      "MaxConcurrency": 1,
+      "Iterator": {
+        "StartAt": "CreateStack",
+        "States": {
+          "CreateStack": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::aws-sdk:cloudformation:createStack",
+            "Parameters": {
+              "StackName.$": "$.StackName",
+              "TemplateURL.$": "$.TemplateURL",
+              "Capabilities": [
+                "CAPABILITY_NAMED_IAM"
+              ]
+            },
+            "ResultPath": "$.CreateStackResult",
+            "Next": "WaitBeforeCheck"
+          },
+          "WaitBeforeCheck": {
+            "Type": "Wait",
+            "Seconds": 15,
+            "Next": "CheckStackStatus"
+          },
+          "CheckStackStatus": {
+            "Type": "Task",
+            "Resource": "arn:aws:states:::aws-sdk:cloudformation:describeStacks",
+            "Parameters": {
+              "StackName.$": "$.StackName"
+            },
+            "ResultPath": "$.DescribeResult",
+            "Next": "EvaluateStatus"
+          },
+          "EvaluateStatus": {
+            "Type": "Choice",
+            "Choices": [
+              {
+                "Variable": "$.DescribeResult.Stacks[0].StackStatus",
+                "StringEquals": "CREATE_COMPLETE",
+                "Next": "SuccessState"
+              },
+              {
+                "Variable": "$.DescribeResult.Stacks[0].StackStatus",
+                "StringMatches": "*FAILED",
+                "Next": "FailState"
+              }
+            ],
+            "Default": "WaitBeforeCheck"
+          },
+          "SuccessState": {
+            "Type": "Pass",
+            "Result": "Stack creation completed successfully",
+            "End": true
+          },
+          "FailState": {
+            "Type": "Fail",
+            "Error": "StackCreationFailed",
+            "Cause": "CloudFormation stack creation failed"
+          }
+        }
+      },
+      "Next": "Success"
+    },
+    "Success": {
+      "Type": "Succeed"
+    }
+  }
+}

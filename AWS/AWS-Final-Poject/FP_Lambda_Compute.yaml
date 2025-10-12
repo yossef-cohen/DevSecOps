@@ -14,12 +14,17 @@ Resources:
       Description: 'Validates and enriches incoming events from Kinesis, writes to S3.'
       Runtime: python3.12
       Handler: index.validator
+      VpcConfig:
+        SubnetIds:
+          - !ImportValue FP-Networking-PrivateSubnet1VPC1
+        SecurityGroupIds:
+          - !ImportValue FP-Networking-LambdaSecurityGroupId
       Environment:
         Variables:
           RAW_BUCKET: !Ref S3Raw
           PROCESSED_BUCKET: !Ref S3Processed
       DeadLetterConfig:
-        TargetArn: !ImportValue Streaming-ValidatorDLQArn
+        TargetArn: !ImportValue ValidatorDLQArn
       Role: !ImportValue All-Mighty-Lambda
       Code:
         ZipFile: |
@@ -57,7 +62,6 @@ Resources:
               print(f"Validated batch: {output}")
               return output
 
-
   AggregatorLambda:
     Type: AWS::Lambda::Function
     Properties:
@@ -65,12 +69,17 @@ Resources:
       Description: 'Triggered by S3 (Processed), aggregates events, writes results to DynamoDB.'
       Runtime: python3.12
       Handler: index.aggregator
+      VpcConfig:
+        SubnetIds:
+          - !ImportValue FP-Networking-PrivateSubnet1VPC1
+        SecurityGroupIds:
+          - !ImportValue FP-Networking-LambdaSecurityGroupId
       Environment:
         Variables:
           METRICS_TABLE: !ImportValue FP-Datastores-MetricsTable
       Role: !ImportValue All-Mighty-Lambda
       DeadLetterConfig:
-        TargetArn: !ImportValue Streaming-AggregatorDLQArn
+        TargetArn: !ImportValue AggregatorDLQArn
       Code:
         ZipFile: |
           import json, boto3, os
@@ -167,7 +176,7 @@ Resources:
   ValidatorEnricherEventSourceMapping:
     Type: AWS::Lambda::EventSourceMapping
     Properties:
-      EventSourceArn: !ImportValue Streaming-KinesisStreamArn
+      EventSourceArn: !ImportValue KinesisStreamArn
       FunctionName: !Ref ValidatorEnricherLambda
       StartingPosition: LATEST
       BatchSize: 10

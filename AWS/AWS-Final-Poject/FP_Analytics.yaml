@@ -16,19 +16,19 @@ Resources:
         Description: "Metadata catalog for processed S3 data"
 
   ProcessedDataCrawler:
-      Type: AWS::Glue::Crawler
-      Properties:
-        Name: 'ProcessedDataCrawler'
-        Role: !ImportValue All-Mighty-Glue
-        DatabaseName: !Ref AnalyticsDatabase
-        Targets:
-          S3Targets:
-            - Path: "s3://yossef-processed-bucket/validated/"  # I changed this to sub instead importvalue
-        Schedule:
-          ScheduleExpression: "cron(0 * * * ? *)"  # runs every hour (optional)
-        SchemaChangePolicy:
-          UpdateBehavior: UPDATE_IN_DATABASE
-          DeleteBehavior: DEPRECATE_IN_DATABASE
+    Type: AWS::Glue::Crawler
+    Properties:
+      Name: 'ProcessedDataCrawler'
+      Role: !ImportValue All-Mighty-Glue
+      DatabaseName: !Ref AnalyticsDatabase
+      Targets:
+        S3Targets:
+          - Path: "s3://yossef-processed-bucket/validated/"  # I changed this to sub instead importvalue
+      Schedule:
+        ScheduleExpression: "cron(0 * * * ? *)"  # runs every hour (optional)
+      SchemaChangePolicy:
+        UpdateBehavior: UPDATE_IN_DATABASE
+        DeleteBehavior: DEPRECATE_IN_DATABASE
 
 ########################
 #        Athena        #
