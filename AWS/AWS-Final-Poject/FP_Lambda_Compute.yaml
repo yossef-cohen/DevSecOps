@@ -62,67 +62,6 @@ Resources:
               print(f"Validated batch: {output}")
               return output
 
-  AggregatorLambda:
-    Type: AWS::Lambda::Function
-    Properties:
-      FunctionName: aggregator
-      Description: 'Triggered by S3 (Processed), aggregates events, writes results to DynamoDB.'
-      Runtime: python3.12
-      Handler: index.aggregator
-      VpcConfig:
-        SubnetIds:
-          - !ImportValue FP-Networking-PrivateSubnet1VPC1
-        SecurityGroupIds:
-          - !ImportValue FP-Networking-LambdaSecurityGroupId
-      Environment:
-        Variables:
-          METRICS_TABLE: !ImportValue FP-Datastores-MetricsTable
-      Role: !ImportValue All-Mighty-Lambda
-      DeadLetterConfig:
-        TargetArn: !ImportValue AggregatorDLQArn
-      Code:
-        ZipFile: |
-          import json, boto3, os
-          from datetime import datetime
-
-          s3 = boto3.client("s3")
-          dynamodb = boto3.resource("dynamodb")
-          table = dynamodb.Table(os.environ["METRICS_TABLE"])
-
-          def aggregator(event, context):
-              aggregates = {}
-              for record in event["Records"]:
-                  bucket = record["s3"]["bucket"]["name"]
-                  key = record["s3"]["object"]["key"]
-                  response = s3.get_object(Bucket=bucket, Key=key)
-                  data = json.loads(response["Body"].read().decode("utf-8"))
-                  key_field = data.get("symbol") or data.get("city")
-                  price = data.get("price")
-                  if key_field and isinstance(price, (int, float)):
-                      aggregates.setdefault(key_field, []).append(price)
-              results = {k: sum(v)/len(v) for k, v in aggregates.items()}
-              for symbol, avg in results.items():
-                  table.put_item(Item={
-                      "symbol": symbol,
-                      "Timestamp": int(datetime.utcnow().timestamp()),
-                      "average": avg,
-                      "TTL": int(datetime.utcnow().timestamp()) + 86400
-                  })
-              print(f"Stored averages: {results}")
-
-#########################
-# Lambda Invoke Permission
-#########################
-
-  AggregatorInvokePermission:
-    Type: AWS::Lambda::Permission
-    DependsOn: AggregatorLambda
-    Properties:
-      Action: lambda:InvokeFunction
-      FunctionName: !Ref AggregatorLambda
-      Principal: s3.amazonaws.com
-
-
 ###################
 #    S3 Buckets   #
 ###################
@@ -137,18 +76,11 @@ Resources:
 
   S3Processed:
     Type: AWS::S3::Bucket
-    DependsOn:
-      - AggregatorLambda
-      - AggregatorInvokePermission
     Properties:
       BucketName: 'yossef-processed-bucket'
       AccessControl: Private
       VersioningConfiguration:
         Status: Enabled
-      NotificationConfiguration:
-        LambdaConfigurations:
-          - Event: "s3:ObjectCreated:*"
-            Function: !GetAtt AggregatorLambda.Arn
 
   S3ProcessedPolicy:
     Type: AWS::S3::BucketPolicy
@@ -172,7 +104,7 @@ Resources:
 ####################
 #  Event Sources   #
 ####################
-
+# Links Kinesis to the ValidatorEnricherLambda so it runs automatically on new stream records.
   ValidatorEnricherEventSourceMapping:
     Type: AWS::Lambda::EventSourceMapping
     Properties:
@@ -192,12 +124,6 @@ Outputs:
     Value: !Ref ValidatorEnricherLambda
     Export:
       Name: "ValidatorEnricherLambda"
-
-  AggregatorLambda:
-    Description: 'Aggregator Lambda Function'
-    Value: !Ref AggregatorLambda
-    Export:
-      Name: "AggregatorLambda"
 
   RawS3Bucket:
     Description: Raw S3 Bucket Name

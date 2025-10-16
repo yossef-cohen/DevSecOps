@@ -8,8 +8,6 @@ Mappings:
       ServicePrincipal: "lambda.amazonaws.com"
     Kinesis:
       ServicePrincipal: "kinesis.amazonaws.com"
-    ec2:
-      ServicePrincipal: "ec2.amazonaws.com"
     APIGateway:
       ServicePrincipal: "apigateway.amazonaws.com"
     EventBridge:
@@ -24,19 +22,15 @@ Mappings:
       ServicePrincipal: "athena.amazonaws.com"
     QuickSight:
       ServicePrincipal: "quicksight.amazonaws.com"
-    SNS:
-      ServicePrincipal: "sns.amazonaws.com"
     CloudWatch:
       ServicePrincipal: "cloudwatch.amazonaws.com"
-    WAF:
-      ServicePrincipal: "wafv2.amazonaws.com"
     CloudFormation:
       ServicePrincipal: "cloudformation.amazonaws.com"
 
 Resources:
   'Fn::ForEach::IAMRoles':
     - RoleName
-    - [Lambda, Kinesis, APIGateway, EventBridge, S3, DynamoDB, Glue, Athena, QuickSight, SNS, CloudWatch, WAF, CloudFormation] # 
+    - [Lambda, Kinesis, APIGateway, EventBridge, S3, DynamoDB, Glue, Athena, QuickSight, CloudWatch, CloudFormation] # 
     - 'Role${RoleName}':
         Type: AWS::IAM::Role
         Properties:
@@ -54,7 +48,7 @@ Resources:
 Outputs:
   'Fn::ForEach::IAMRoleOutputs':
     - OutputsName
-    - [Lambda, Kinesis, APIGateway, EventBridge, S3, DynamoDB, Glue, Athena, QuickSight, SNS, CloudWatch, WAF, CloudFormation] # 
+    - [Lambda, Kinesis, APIGateway, EventBridge, S3, DynamoDB, Glue, Athena, QuickSight, CloudWatch, CloudFormation] # 
     - 'AllMighty${OutputsName}':
         Description: !Sub 'ARN of the All-Mighty ${OutputsName} Role'
         Value: !GetAtt [!Sub "Role${OutputsName}", Arn]

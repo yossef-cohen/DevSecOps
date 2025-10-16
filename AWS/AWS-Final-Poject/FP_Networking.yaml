@@ -9,23 +9,7 @@ Parameters:
     Description: "Enter the CIDR block for VPC1"
     ConstraintDescription: "Must be a valid CIDR range of the form x.x.x.x/nn"
 
-  VPC2CIDR:
-    Type: String
-    Default: "40.0.0.0/16"
-    AllowedPattern: "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})"
-    Description: "Enter the CIDR block for VPC2"
-    ConstraintDescription: "Must be a valid CIDR range of the form x.x.x.x/nn"
-
   SubnetBitsVPC1:
-    Type: Number
-    Default: 8
-    MinValue: 4
-    MaxValue: 12
-    Description: >
-      Number of additional bits for subnet mask.
-      Example: /16 + 8 = /24 subnets
-
-  SubnetBitsVPC2:
     Type: Number
     Default: 8
     MinValue: 4
@@ -85,7 +69,7 @@ Resources:
     Properties:
       VpcId: !Ref VPC1
       AvailabilityZone: !Select [0, !GetAZs '']
-      CidrBlock: !Select [0, !Cidr [!Ref VPC1CIDR, 4, !Ref SubnetBitsVPC1]]
+      CidrBlock: !Select [0, !Cidr [!Ref VPC1CIDR, 2, !Ref SubnetBitsVPC1]]
       MapPublicIpOnLaunch: true
       Tags:
         - Key: Name
@@ -96,7 +80,7 @@ Resources:
     Properties:
       VpcId: !Ref VPC1
       AvailabilityZone: !Select [0, !GetAZs '']
-      CidrBlock: !Select [1, !Cidr [!Ref VPC1CIDR, 4, !Ref SubnetBitsVPC1]]
+      CidrBlock: !Select [1, !Cidr [!Ref VPC1CIDR, 2, !Ref SubnetBitsVPC1]]
       Tags:
         - Key: Name
           Value: VPC1-PrivateSubnet1
@@ -119,7 +103,7 @@ Resources:
       DestinationCidrBlock: 0.0.0.0/0
       GatewayId: !Ref InternetGateway1
 
-      # Route Table for VPC2
+  # Route Table for VPC1 Private Subnet
   PrivateRouteTable1:
     Type: AWS::EC2::RouteTable
     Properties:
@@ -128,29 +112,6 @@ Resources:
         - Key: Name
           Value: VPC1-PrivateRT
 
-  NATGateway:
-    Type: AWS::EC2::NatGateway
-    Properties:
-      AllocationId: !GetAtt [NATGatewayEIP, AllocationId]
-      SubnetId: !Ref PublicSubnetVPC1
-      Tags:
-        - Key: Name
-          Value: prod-app-nat
-
-  NATGatewayEIP:
-   Type: AWS::EC2::EIP
-   Properties:
-      Domain: vpc
-
-  RouteNATGateway:
-   Type: AWS::EC2::Route
-   Properties:
-      RouteTableId: !Ref PrivateRouteTable1
-      DestinationCidrBlock: '0.0.0.0/0'
-      NatGatewayId: !Ref NATGateway
-
-
-  
   # Route Table Association for Public Subnet in VPC1
   PublicSubnet1RouteTableAssociation:
     Type: AWS::EC2::SubnetRouteTableAssociation
@@ -190,39 +151,6 @@ Resources:
         - Key: Name
           Value: prod-app-dynamodb-endpoint
 
-##################
-#      VPC2      #
-##################
-  VPC2:
-    Type: AWS::EC2::VPC
-    Properties:
-      CidrBlock: !Ref VPC2CIDR
-      EnableDnsSupport: true
-      EnableDnsHostnames: true
-      Tags:
-        - Key: Name
-          Value: prod-data
-
-  # Subnet for VPC2
-  PrivateSubnetVPC2:
-    Type: AWS::EC2::Subnet
-    Properties:
-      VpcId: !Ref VPC2
-      AvailabilityZone: !Select [2, !GetAZs '']
-      CidrBlock: !Select [1, !Cidr [!Ref VPC2CIDR, 2, !Ref SubnetBitsVPC2]]
-      Tags:
-        - Key: Name
-          Value: VPC2-PrivateSubnet1
-
-  # Route Table for VPC2
-  PrivateRouteTable2:
-    Type: AWS::EC2::RouteTable
-    Properties:
-      VpcId: !Ref VPC2
-      Tags:
-        - Key: Name
-          Value: VPC2-PrivateRT
-
 ###################
 # Security Groups #
 ###################
@@ -238,24 +166,7 @@ Resources:
           FromPort: !Ref AllowPort
           ToPort: !Ref AllowPort
           CidrIp: 0.0.0.0/0
-  
-  # Security Group for EC2 instances
-  EC2SecurityGroup:
-    Type: AWS::EC2::SecurityGroup
-    Properties:
-      GroupDescription: Security Group for EC2 instances
-      VpcId: !Ref VPC1
-      SecurityGroupEgress:
-        - IpProtocol: !Ref AllowedProtocol
-          FromPort: !Ref AllowPort
-          ToPort: !Ref AllowPort
-          CidrIp: 0.0.0.0/0
-      SecurityGroupIngress: 
-        - IpProtocol: "6" # TCP for SSH
-          FromPort: 22
-          ToPort: 22
-          CidrIp: 0.0.0.0/0
-  
+
   # Security Group for API Gateway 
   APIGatewaySecurityGroup:
     Type: AWS::EC2::SecurityGroup
@@ -268,6 +179,42 @@ Resources:
           ToPort: !Ref AllowPort
           CidrIp: 0.0.0.0/0
 
+##########################
+# Interface Endpoints    #
+##########################
+
+  # CloudWatch Logs endpoint (for Lambda to write logs)
+  CloudWatchLogsVPCEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref VPC1
+      ServiceName: !Sub "com.amazonaws.${AWS::Region}.logs"
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SecurityGroupIds:
+        - !Ref LambdaSecurityGroup
+      SubnetIds:
+        - !Ref PrivateSubnetVPC1
+      Tags:
+        - Key: Name
+          Value: prod-app-logs-endpoint
+
+  # Kinesis Streams endpoint (for Lambda to read/write to Kinesis)
+  KinesisVPCEndpoint:
+    Type: AWS::EC2::VPCEndpoint
+    Properties:
+      VpcId: !Ref VPC1
+      ServiceName: !Sub "com.amazonaws.${AWS::Region}.kinesis-streams"
+      VpcEndpointType: Interface
+      PrivateDnsEnabled: true
+      SecurityGroupIds:
+        - !Ref LambdaSecurityGroup
+      SubnetIds:
+        - !Ref PrivateSubnetVPC1
+      Tags:
+        - Key: Name
+          Value: prod-app-kinesis-endpoint
+
 ##################
 #     Outputs    #
 ##################
@@ -278,12 +225,6 @@ Outputs:
     Value: !Ref VPC1
     Export:
       Name: !Sub "${AWS::StackName}-VPC1Id"
-
-  VPC2Id:
-    Description: VPC2 ID
-    Value: !Ref VPC2
-    Export:
-      Name: !Sub "${AWS::StackName}-VPC2Id"
 
   PublicSubnetIdVPC1:
     Description: Public Subnet in VPC1
@@ -297,18 +238,6 @@ Outputs:
     Export:
       Name: !Sub "${AWS::StackName}-PrivateSubnet1VPC1"
 
-  PrivateSubnetIdVPC2:
-    Description: Private Subnet in VPC2
-    Value: !Ref PrivateSubnetVPC2
-    Export:
-      Name: !Sub "${AWS::StackName}-PrivateSubnet1VPC2"
-
-  NATGatewayId:
-    Description: NAT Gateway in VPC1
-    Value: !Ref NATGateway
-    Export:
-      Name: !Sub "${AWS::StackName}-NATGatewayId"
-
   PublicRouteTableIdVPC1:
     Description: Public Route Table for VPC1
     Value: !Ref PublicRouteTable1
@@ -321,23 +250,11 @@ Outputs:
     Export:
       Name: !Sub "${AWS::StackName}-PrivateRouteTableIdVPC1"
 
-  PrivateRouteTableIdVPC2:
-    Description: Private Route Table for VPC2
-    Value: !Ref PrivateRouteTable2
-    Export:
-      Name: !Sub "${AWS::StackName}-PrivateRouteTableIdVPC2"
-
   LambdaSecurityGroupId:
     Description: Lambda Security Group ID
     Value: !Ref LambdaSecurityGroup
     Export:
       Name: !Sub "${AWS::StackName}-LambdaSecurityGroupId"
-
-  EC2SecurityGroupId:
-    Description: EC2 Security Group ID
-    Value: !Ref EC2SecurityGroup
-    Export:
-      Name: !Sub "${AWS::StackName}-EC2SecurityGroupId"
 
   APIGatewaySecurityGroupId:
     Description: API Gateway Security Group ID

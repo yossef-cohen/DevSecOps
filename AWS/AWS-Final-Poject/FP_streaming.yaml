@@ -1,13 +1,11 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Description: 'Ingestion & Streaming Services'
 
-
 Resources:
-
 ########################
 #    Kinesis Stream    #  
 ########################
-
+#Kinesis Stream is a real-time data pipeline service that continuously ingests, stores, and processes.
   KinesisStream:
     Type: AWS::Kinesis::Stream
     Properties:
@@ -25,16 +23,10 @@ Resources:
       QueueName: validator_dlq
       MessageRetentionPeriod: 86400  # 1 day
 
-  AggregatorDLQ:
-    Type: AWS::SQS::Queue
-    Properties:
-      QueueName: aggregator_dlq
-      MessageRetentionPeriod: 86400  # 1 day
-
 ########################
 # EventBridge Scheduler#  
 ########################
-
+# EventBridge Scheduler is a fully managed service that lets you run tasks or trigger AWS services(Lambda and kinesis)
   EventBridgeScheduler:
     Type: AWS::Events::Rule
     Properties:
@@ -42,7 +34,7 @@ Resources:
       ScheduleExpression: 'rate(1 minute)'
       State: 'ENABLED'
       Targets:
-        - Arn: !GetAtt KinesisStream.Arn   # ✅ actual Kinesis stream ARN
+        - Arn: !GetAtt KinesisStream.Arn   #actual Kinesis stream ARN
           Id: 'KinesisTarget'
           RoleArn: !ImportValue All-Mighty-EventBridge
 
@@ -64,16 +56,16 @@ Resources:
       RestApiId: !Ref ApiGateway
 
   ApiMethod:
-    Type: AWS::ApiGateway::Method
+    Type: AWS::ApiGateway::Method       
     Properties:
-      AuthorizationType: NONE
-      HttpMethod: POST
-      ResourceId: !Ref ApiResource
-      RestApiId: !Ref ApiGateway
+      AuthorizationType: NONE            # endpoint is public
+      HttpMethod: POST                   
+      ResourceId: !Ref ApiResource      
+      RestApiId: !Ref ApiGateway         
       Integration:
-        IntegrationHttpMethod: POST
-        Type: AWS_PROXY
-        Uri: !Sub arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${StockFetcherLambda.Arn}/invocations
+        IntegrationHttpMethod: POST      
+        Type: AWS_PROXY                  # Sends full request directly to Lambda (proxy mode)
+        Uri: !Sub arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${StockFetcherLambda.Arn}/invocations  
 
   ApiDeployment:
     Type: AWS::ApiGateway::Deployment
@@ -98,17 +90,12 @@ Resources:
     Properties:
       FunctionName: 'StockFetcher'
       Handler: 'index.handler'
-      VpcConfig:
-        SubnetIds:
-          - !ImportValue FP-Networking-PrivateSubnet1VPC1
-        SecurityGroupIds:
-          - !ImportValue FP-Networking-APIGatewaySecurityGroupId
       Role: !ImportValue All-Mighty-Lambda
       Runtime: 'python3.13'
-      Timeout: 30
+      Timeout: 15
       Environment:
         Variables:
-          KINESIS_STREAM_NAME: !Ref KinesisStream 
+          KINESIS_STREAM_NAME: !Ref KinesisStream
       Code:
         ZipFile: |
           import json
@@ -164,7 +151,6 @@ Resources:
 #     Outputs    #
 ##################
 
-
 Outputs:
   KinesisStreamArn:
     Description: ARN of Kinesis Stream
@@ -177,12 +163,6 @@ Outputs:
     Value: !GetAtt ValidatorDLQ.Arn
     Export:
       Name: !Sub "ValidatorDLQArn"
-
-  AggregatorDLQArn:
-    Description: ARN of Aggregator DLQ
-    Value: !GetAtt AggregatorDLQ.Arn
-    Export:
-      Name: !Sub "AggregatorDLQArn"
 
   ApiInvokeURL:
     Description: Invoke URL for Stock API

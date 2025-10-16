@@ -132,8 +132,12 @@ Resources:
                 "metrics": [
                   [ "AWS/Lambda", "Invocations", "FunctionName", "validator_enricher" ],
                   [ ".", "Errors", ".", "." ],
-                  [ "AWS/S3", "NumberOfObjects", "BucketName", "banana-processed-bucket" ],
-                  [ "AWS/DynamoDB", "SuccessfulRequestLatency", "TableName", "Metrics" ]
+                  [ "AWS/S3", "NumberOfObjects", "BucketName", "yossef-processed-bucket" ],
+                  [ "AWS/Kinesis", "IncomingRecords", "StreamName", "StockStream" ],
+                  [ "AWS/ApiGateway", "5XXError", "ApiName", "StockApi" ],
+                  [ "AWS/Glue", "CrawlerSuccess", "CrawlerName", "ProcessedDataCrawler" ],
+                  [ "AWS/Athena", "QueryFailed", "WorkGroup", "AthenaWorkGroup-Banana" ],
+                  [ "AWS/SQS", "ApproximateNumberOfMessagesVisible", "QueueName", "validator_dlq" ]
                 ],
                 "period": 300,
                 "stat": "Sum",

@@ -2,7 +2,6 @@ AWSTemplateFormatVersion: '2010-09-09'
 Description: 'AWS Glue Analytics Layer – Database and Crawler for processed S3 data'
 
 Resources:
-
 ########################
 #  Analytics Database  #  
 ########################
@@ -23,9 +22,9 @@ Resources:
       DatabaseName: !Ref AnalyticsDatabase
       Targets:
         S3Targets:
-          - Path: "s3://yossef-processed-bucket/validated/"  # I changed this to sub instead importvalue
+          - Path: "s3://yossef-processed-bucket/validated/"
       Schedule:
-        ScheduleExpression: "cron(0 * * * ? *)"  # runs every hour (optional)
+        ScheduleExpression: "cron(0 * * * ? *)"  # runs every hour
       SchemaChangePolicy:
         UpdateBehavior: UPDATE_IN_DATABASE
         DeleteBehavior: DEPRECATE_IN_DATABASE
@@ -63,7 +62,6 @@ Resources:
         ORDER BY validated_at DESC
         LIMIT 10;
       WorkGroup: !Ref AthenaWorkGroup
-
 
 ########################
 #        Outputs       #
