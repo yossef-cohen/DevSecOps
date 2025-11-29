@@ -10,7 +10,8 @@ find_ip(){
 	fi
 	
 }
-error="error|
+
+error="(error|
 warning|
 not found|
 No such file or directory|
@@ -27,29 +28,28 @@ readonly variable|
 unary operator expected|
 binary operator expected|
 unexpected token|
-unexpected EOF|"
+unexpected EOF)"
 
 find_error(){
 	err=$1
-	if [[ "$err" =~ $error ]]; then
+	if [[ "$err" =~ $error ]]; then	
+		echo "${BASH_REMATCH[1]}"
 		return 0
-	else
-		return 1
 	fi
 }
 
 
-
+i=1
+banana="$(date).rep"
 exec 3< /var/log/syslog
 while read -u 3 line
 do 
-	if find_error "$line"; then
-		ip=$(find_ip "$line")
-		ip="${ip//[[:space:]]/}"
-		if [[ -n "$ip" ]]; then    # print only if IP is not empty
-			echo "$ip" >> ip
-		fi	
-	fi
+	err=$(find_error "$line")
+	ip=$(find_ip "$line")
+	ip="${ip//[[:space:]]/}"
+	if [[ -n "$ip" && -n $err ]]; then    # print only if IP is not empty
+		echo "$ip and $err in line $i, good good" >> "$banana"
+	fi	
 	i=$((i+1))
 
 done
