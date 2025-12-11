@@ -15,6 +15,6 @@ if rnge[0] < rnge[1]:
     if input(f"Is it {rnge[0]} ?\n") == "y":
         print(f"thenumber: {rnge[0]}")
     else:
-        print(f"the number: {rnge[1]}")
+        print(f"the number: {rnge[1]}")     
 else:
     print(f"the number: {rnge[0]}")
